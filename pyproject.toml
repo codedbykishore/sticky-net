@@ -1,0 +1,48 @@
+[project]
+name = "sticky-net"
+version = "0.1.0"
+description = "AI Agentic Honey-Pot for Scam Detection"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "langchain>=0.1.0",
+    "langchain-google-vertexai>=0.0.5",
+    "langgraph>=0.0.20",
+    "google-cloud-firestore>=2.14.0",
+    "google-cloud-aiplatform>=1.38.0",
+    "python-dotenv>=1.0.0",
+    "structlog>=24.1.0",
+    "httpx>=0.26.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "httpx>=0.26.0",
+    "ruff>=0.1.0",
+    "mypy>=1.8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src", "config"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true

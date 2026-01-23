@@ -1,0 +1,37 @@
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - API_KEY=${API_KEY:-dev-api-key}
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT}
+      - VERTEX_AI_LOCATION=${VERTEX_AI_LOCATION:-us-central1}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/secrets/service-account.json
+      - FIRESTORE_EMULATOR_HOST=firestore:8081
+      - LLM_MODEL=${LLM_MODEL:-gemini-3-pro}
+      - DEBUG=true
+    volumes:
+      - ./src:/app/src:ro
+      - ./config:/app/config:ro
+      - ./secrets:/app/secrets:ro
+    depends_on:
+      - firestore
+    networks:
+      - sticky-net
+
+  firestore:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    command: gcloud emulators firestore start --host-port=0.0.0.0:8081
+    ports:
+      - "8081:8081"
+    networks:
+      - sticky-net
+
+networks:
+  sticky-net:
+    driver: bridge
