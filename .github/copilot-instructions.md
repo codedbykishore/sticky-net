@@ -1,6 +1,7 @@
 # Sticky-Net: AI Agentic Honey-Pot System
 
-> **Important**: Work in discrete steps. Use milestone instructions in `.github/instructions/` for detailed task breakdowns.
+# Important Note:
+Remember that your context window is limited - especially the output size. So you should ALWAYS work in discrete steps and run each step using #runSubagent
 
 ## Project Overview
 
