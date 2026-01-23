@@ -20,9 +20,16 @@ An AI-powered honeypot system that detects scam messages and autonomously engage
 | **Deployment** | Google Cloud Run |
 | **Local Dev** | Docker Compose |
 
+## Testing Instructions
+For each time running any test, always run 
+.venv/bin/python -m pytest tests/ -v
+
+## Vertex AI Models
+See [docs/VERTEX_API_DOCS.md](./../docs/VERTEX_API_DOCS.md) for details on the models used.
+
 ## Architecture
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture documentation.
+See [docs/ARCHITECTURE.md](./../docs/ARCHITECTURE.md) for detailed architecture documentation.
 
 ### High-Level Flow
 
@@ -52,11 +59,11 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture docum
       Not Scam (conf < 0.6)              Is Scam (conf ≥ 0.6)
               │                                     │
               ▼                                     ▼
-┌─────────────────────────┐     ┌─────────────────────────────────────┐
-│  Return neutral         │     │      STAGE 2: Engagement Policy     │
+┌─────────────────────────┐     ┌──────────────────────────────────────┐
+│  Return neutral         │     │      STAGE 2: Engagement Policy      │
 │  Continue monitoring    │     │  • conf 0.6-0.85: CAUTIOUS (10 turns)│
 └─────────────────────────┘     │  • conf > 0.85: AGGRESSIVE (25 turns)│
-                                └───────────────┬─────────────────────┘
+                                └───────────────┬──────────────────────┘
                                                 │
                                                 ▼
                                 ┌─────────────────────────────────────┐
@@ -233,26 +240,6 @@ CAUTIOUS_CONFIDENCE_THRESHOLD=0.60
 AGGRESSIVE_CONFIDENCE_THRESHOLD=0.85
 ```
 
-## Key Patterns
-
-### Intelligence Extraction Regex
-```python
-# Bank accounts: 9-18 digits, optionally formatted
-BANK_ACCOUNT_PATTERN = r'\b\d{9,18}\b|\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{0,6}\b'
-
-# UPI IDs: username@provider format
-UPI_PATTERN = r'\b[\w.-]+@[a-zA-Z]+\b'
-
-# Phishing URLs: http/https with suspicious indicators
-URL_PATTERN = r'https?://[^\s<>"{}|\\^`\[\]]+'
-```
-
-### Scam Detection Indicators
-- **Urgency**: "immediately", "today", "within 24 hours", "urgent"
-- **Authority**: "RBI", "bank", "government", "police"
-- **Threats**: "blocked", "suspended", "legal action", "arrested"
-- **Requests**: "OTP", "PIN", "password", "verify", "update KYC"
-
 ## Agent Behavior Rules
 
 1. **Never reveal detection** — Maintain believable human persona at all times
@@ -269,9 +256,3 @@ URL_PATTERN = r'https?://[^\s<>"{}|\\^`\[\]]+'
 - ✅ Responsible data handling only
 - ✅ Log all extracted intelligence securely
 
-## Resources
-
-- [FastAPI Docs](https://fastapi.tiangolo.com/)
-- [Vertex AI Docs](https://cloud.google.com/vertex-ai/docs)
-- [Firestore Docs](https://firebase.google.com/docs/firestore)
-- [google-genai SDK Reference](docs/VERTEX_API_DOCS.md)
