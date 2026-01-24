@@ -1,6 +1,7 @@
 """AI-based scam classification using Gemini 3 Flash."""
 
 import json
+import os
 from dataclasses import dataclass, field
 
 import structlog
@@ -11,6 +12,26 @@ from config.settings import get_settings
 from src.api.schemas import ConversationMessage, Metadata
 
 logger = structlog.get_logger()
+
+# Safety settings for Gemini to allow scam content analysis (for honeypot context)
+CLASSIFIER_SAFETY_SETTINGS = [
+    types.SafetySetting(
+        category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+        threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH,
+    ),
+    types.SafetySetting(
+        category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+        threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH,
+    ),
+    types.SafetySetting(
+        category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+        threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH,
+    ),
+    types.SafetySetting(
+        category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+        threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH,
+    ),
+]
 
 
 @dataclass
@@ -59,10 +80,24 @@ Return ONLY valid JSON (no markdown):
 """
 
     def __init__(self) -> None:
-        """Initialize the classifier with Gemini 3 Flash."""
+        """Initialize the classifier with Gemini 3 Flash and fallback to 2.5."""
         self.settings = get_settings()
-        self.client = genai.Client()
+        
+        # Set credentials path in environment if configured
+        if self.settings.google_application_credentials:
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = self.settings.google_application_credentials
+        
+        # Initialize Gemini client with Vertex AI credentials from settings
+        self.client = genai.Client(
+            vertexai=self.settings.google_genai_use_vertexai,
+            project=self.settings.google_cloud_project,
+            location=self.settings.google_cloud_location,
+        )
+        
+        # Primary model (Gemini 3 Flash) and fallback (Gemini 2.5 Flash)
         self.model = self.settings.flash_model  # gemini-3-flash-preview
+        self.fallback_model = self.settings.fallback_flash_model  # gemini-2.5-flash
+        self._last_model_used: str | None = None  # Track which model was used
         self.logger = logger.bind(component="ScamClassifier")
 
     async def classify(
@@ -108,19 +143,65 @@ Return ONLY valid JSON (no markdown):
         )
 
         try:
-            # Call Gemini 3 Flash with LOW thinking for speed
-            response = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    thinking_config=types.ThinkingConfig(
-                        thinking_level=types.ThinkingLevel.LOW  # Fast classification
-                    ),
-                    temperature=0.1,  # Low temperature for consistent classification
-                ),
-            )
-
-            return self._parse_response(response.text)
+            # Try primary model (Gemini 3 Flash) first, then fallback (Gemini 2.5 Flash)
+            models_to_try = [self.model, self.fallback_model]
+            response_text = None
+            
+            for model_name in models_to_try:
+                try:
+                    self.logger.debug(f"Trying classification model: {model_name}")
+                    
+                    # Build config - only add thinking_config for Gemini 3 models
+                    if "gemini-3" in model_name:
+                        config = types.GenerateContentConfig(
+                            thinking_config=types.ThinkingConfig(
+                                thinking_level=types.ThinkingLevel.LOW  # Fast classification
+                            ),
+                            temperature=0.1,  # Low temperature for consistent classification
+                            safety_settings=CLASSIFIER_SAFETY_SETTINGS,
+                        )
+                    else:
+                        # Gemini 2.5 and earlier don't support thinking_config
+                        config = types.GenerateContentConfig(
+                            temperature=0.1,
+                            safety_settings=CLASSIFIER_SAFETY_SETTINGS,
+                        )
+                    
+                    response = self.client.models.generate_content(
+                        model=model_name,
+                        contents=prompt,
+                        config=config,
+                    )
+                    
+                    response_text = response.text
+                    
+                    # Check if we got a valid response
+                    if response_text and len(response_text.strip()) > 0:
+                        self._last_model_used = model_name
+                        self.logger.info(
+                            "Classification successful",
+                            model=model_name,
+                            response_length=len(response_text)
+                        )
+                        break
+                    else:
+                        self.logger.warning(
+                            "Empty response from model, trying fallback",
+                            model=model_name
+                        )
+                        
+                except Exception as e:
+                    self.logger.warning(
+                        "Classification model failed, trying fallback",
+                        model=model_name,
+                        error=str(e)
+                    )
+                    continue
+            
+            if response_text:
+                return self._parse_response(response_text)
+            else:
+                raise Exception("All models failed to generate response")
 
         except Exception as e:
             self.logger.error("AI classification failed", error=str(e))

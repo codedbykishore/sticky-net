@@ -29,9 +29,11 @@ class Settings(BaseSettings):
     firestore_collection: str = "conversations"
     firestore_emulator_host: str | None = None
 
-    # AI Models (Gemini 3)
+    # AI Models (Gemini 3 with Gemini 2.5 fallback)
     flash_model: str = "gemini-3-flash-preview"  # Fast classification
-    pro_model: str = "gemini-3-pro-preview"      # Engagement responses
+    pro_model: str = "gemini-3-pro-preview"      # Engagement responses (primary)
+    fallback_flash_model: str = "gemini-2.5-flash"  # Fallback classification
+    fallback_pro_model: str = "gemini-2.5-pro"      # Fallback engagement
     llm_temperature: float = 0.7
 
     # Engagement Policy

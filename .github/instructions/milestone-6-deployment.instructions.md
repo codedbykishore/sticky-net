@@ -99,7 +99,7 @@ services:
     environment:
       - API_KEY=${API_KEY:-dev-api-key}
       - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT}
-      - VERTEX_AI_LOCATION=${VERTEX_AI_LOCATION:-us-central1}
+      - VERTEX_AI_LOCATION=${VERTEX_AI_LOCATION:-global}
       - FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION:-conversations}
       - LLM_MODEL=${LLM_MODEL:-gemini-3-flash-preview}
       - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.7}
@@ -364,7 +364,7 @@ steps:
       - --set-secrets=API_KEY=sticky-net-api-key:latest
 
 substitutions:
-  _REGION: us-central1
+  _REGION: global
 
 images:
   - "gcr.io/$PROJECT_ID/sticky-net:$COMMIT_SHA"
@@ -384,7 +384,7 @@ set -e
 
 # Configuration
 PROJECT_ID="${1:-$(gcloud config get-value project)}"
-REGION="${2:-us-central1}"
+REGION="${2:-global}"
 SERVICE_ACCOUNT_NAME="sticky-net-sa"
 
 echo "🚀 Setting up GCP resources for project: $PROJECT_ID"
@@ -471,7 +471,7 @@ echo "   GOOGLE_APPLICATION_CREDENTIALS=./secrets/service-account.json"
 set -e
 
 PROJECT_ID="${GOOGLE_CLOUD_PROJECT:-$(gcloud config get-value project)}"
-REGION="${VERTEX_AI_LOCATION:-us-central1}"
+REGION="${VERTEX_AI_LOCATION:-global}"
 IMAGE_TAG="${1:-latest}"
 
 echo "🚀 Deploying Sticky-Net to Cloud Run..."
@@ -539,7 +539,7 @@ class Settings(BaseSettings):
 
     # Google Cloud
     google_cloud_project: str = ""
-    vertex_ai_location: str = "us-central1"
+    vertex_ai_location: str = "global"
     google_application_credentials: str = ""
 
     # Firestore
@@ -632,7 +632,7 @@ docker-compose logs -f api
 # Push to main branch -> automatic deployment
 
 # Option 2: Manual deployment
-./scripts/setup-gcp.sh your-project-id us-central1
+./scripts/setup-gcp.sh your-project-id global
 ./scripts/deploy-manual.sh
 
 # Option 3: Via Cloud Build
@@ -675,12 +675,12 @@ gcloud monitoring uptime-check-configs create sticky-net-uptime \
 
 ```bash
 # List revisions
-gcloud run revisions list --service sticky-net --region us-central1
+gcloud run revisions list --service sticky-net --region global
 
 # Rollback to previous revision
 gcloud run services update-traffic sticky-net \
   --to-revisions=sticky-net-PREVIOUS_REVISION=100 \
-  --region us-central1
+  --region global
 ```
 
 ## Cost Optimization

@@ -210,7 +210,7 @@ services:
     environment:
       - API_KEY=${API_KEY:-dev-api-key}
       - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT}
-      - VERTEX_AI_LOCATION=${VERTEX_AI_LOCATION:-us-central1}
+      - VERTEX_AI_LOCATION=${VERTEX_AI_LOCATION:-global}
       - GOOGLE_APPLICATION_CREDENTIALS=/app/secrets/service-account.json
       - FIRESTORE_EMULATOR_HOST=firestore:8081
       - LLM_MODEL=${LLM_MODEL:-gemini-3-pro}
@@ -531,7 +531,7 @@ pytest --cov=src tests/
 
 ## Architecture
 
-See [.github/copilot-instructions.md](.github/copilot-instructions.md) for detailed architecture documentation.
+See [.github/copilot-instructions.md](./../copilot-instructions.md) for detailed architecture documentation.
 
 ## License
 
