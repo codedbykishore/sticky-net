@@ -3,7 +3,7 @@
 import pytest
 
 from src.intelligence.extractor import IntelligenceExtractor, ExtractionResult
-from src.intelligence.patterns import is_suspicious_url, IntelligenceType, ExtractionSource
+from src.intelligence.validators import is_suspicious_url, ExtractionSource
 
 
 class TestIntelligenceExtractor:

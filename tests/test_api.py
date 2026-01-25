@@ -73,7 +73,10 @@ class TestAnalyzeEndpoint:
         # Setup mocks
         mock_detector_instance = mock_detector.return_value
         mock_detector_instance.analyze = AsyncMock(
-            return_value=type("Result", (), {"is_scam": True, "confidence": 0.95})()
+            return_value=type(
+                "Result", (), 
+                {"is_scam": True, "confidence": 0.95, "scam_type": "banking_fraud"}
+            )()
         )
 
         mock_agent_instance = mock_agent.return_value
@@ -85,6 +88,7 @@ class TestAnalyzeEndpoint:
                     "duration_seconds": 120,
                     "notes": "Urgency tactics detected",
                     "response": "Oh no, what should I do?",
+                    "extracted_intelligence": None,  # Agent may return extracted intel
                 },
             )()
         )
@@ -132,7 +136,10 @@ class TestAnalyzeEndpoint:
         """Legitimate message should not trigger engagement."""
         mock_detector_instance = mock_detector.return_value
         mock_detector_instance.analyze = AsyncMock(
-            return_value=type("Result", (), {"is_scam": False, "confidence": 0.1})()
+            return_value=type(
+                "Result", (), 
+                {"is_scam": False, "confidence": 0.1, "scam_type": None}
+            )()
         )
 
         response = client.post(

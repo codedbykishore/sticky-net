@@ -10,22 +10,127 @@ from typing import Any
 
 import structlog
 
-from src.intelligence.patterns import (
-    IntelligenceType,
+from src.api.schemas import ExtractedIntelligence, OtherIntelItem
+from src.intelligence.validators import (
     ExtractionSource,
-    BANK_ACCOUNT_PATTERNS,
-    UPI_PATTERN,
-    UPI_GENERIC_PATTERN,
-    PHONE_PATTERNS,
-    URL_PATTERN,
-    EMAIL_PATTERN,
-    IFSC_PATTERN,
-    BANK_NAME_PATTERN,
-    BENEFICIARY_NAME_PATTERNS,
-    WHATSAPP_PATTERNS,
     INDIAN_BANK_NAMES,
+    UPI_PROVIDERS,
+    SUSPICIOUS_URL_INDICATORS,
     is_suspicious_url,
+    validate_phone_number,
+    validate_upi_id,
+    validate_bank_account,
+    validate_ifsc,
+    validate_email,
+    validate_beneficiary_name,
 )
+
+logger = structlog.get_logger()
+
+
+# =============================================================================
+# REGEX PATTERNS FOR SCANNING (Extraction from raw text)
+# These are different from validators - they FIND patterns in text
+# =============================================================================
+
+# Bank Account Patterns (for scanning text)
+BANK_ACCOUNT_SCAN_PATTERNS = [
+    # Plain 9-18 digit number
+    re.compile(r"\b\d{9,18}\b"),
+    # Formatted with spaces/hyphens: XXXX-XXXX-XXXX-XXXX
+    re.compile(r"\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{0,6}\b"),
+    # Account number with prefix like "A/C" or "Account:"
+    re.compile(r"(?:a/c|account|acc)[\s:]*#?\s*(\d{9,18})", re.IGNORECASE),
+]
+
+# UPI ID Patterns (for scanning text)
+UPI_KNOWN_PROVIDER_PATTERN = re.compile(
+    rf"\b[\w.-]+@(?:{'|'.join(UPI_PROVIDERS)})\b",
+    re.IGNORECASE,
+)
+UPI_GENERIC_SCAN_PATTERN = re.compile(r"\b[\w.-]{3,}@[a-zA-Z]{2,15}\b")
+
+# Phone Number Patterns (for scanning text)
+PHONE_SCAN_PATTERNS = [
+    # +91 prefix with 10 digits
+    re.compile(r"\+91[-\s]?\d{10}\b"),
+    # 12 digits: 91 followed by 10 digits starting with 6-9
+    re.compile(r"\b91[6-9]\d{9}\b"),
+    # 10 digits starting with 6-9
+    re.compile(r"\b[6-9]\d{9}\b"),
+    # Formatted with spaces/hyphens
+    re.compile(r"\b[6-9]\d{2}[-\s]?\d{3}[-\s]?\d{4}\b"),
+    # 91 followed by formatted 10 digits
+    re.compile(r"\b91[-\s]?[6-9]\d{2}[-\s]?\d{3}[-\s]?\d{4}\b"),
+]
+
+# URL Pattern (for scanning text)
+URL_SCAN_PATTERN = re.compile(
+    r"https?://[^\s<>\"'{}|\\^`\[\]]+",
+    re.IGNORECASE,
+)
+
+# Email Pattern (for scanning text)
+EMAIL_SCAN_PATTERN = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
+
+# IFSC Code Pattern (for scanning text)
+IFSC_SCAN_PATTERN = re.compile(r"\b[A-Z]{4}0[A-Z0-9]{6}\b", re.IGNORECASE)
+
+# Bank Name Pattern (for scanning text)
+BANK_NAME_SCAN_PATTERN = re.compile(
+    r"\b(?:" + "|".join(re.escape(name) for name in INDIAN_BANK_NAMES) + r")\b",
+    re.IGNORECASE,
+)
+
+# Beneficiary Name Patterns (for scanning text)
+BENEFICIARY_NAME_SCAN_PATTERNS = [
+    # "name will show as 'Name'" or "name shows as Name"
+    re.compile(
+        r"(?:name\s+(?:will\s+)?(?:show|display|appear)s?\s+(?:as)?[\s:]*['\"]?)([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})(?=['\"]|\s*[-–]|$|\.|,)",
+        re.IGNORECASE,
+    ),
+    # "Account Holder: Name" or "A/C Holder Name: XYZ"
+    re.compile(
+        r"(?:account\s+holder|a/c\s+holder|beneficiary|payee)[\s:]+(?:name)?[\s:]*['\"]?([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})(?=['\"]|\n|$|\.|,)",
+        re.IGNORECASE,
+    ),
+    # "Transfer to Name" or "Send to Name"
+    re.compile(
+        r"(?:transfer|send|pay)\s+(?:money\s+)?to\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})(?:\s*[-–]|\s+(?:sir|madam|ji|sahab))",
+        re.IGNORECASE,
+    ),
+    # "Name - Title" pattern like "Rahul Kumar - KYC Support"
+    re.compile(
+        r"['\"]([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\s*[-–]\s*(?:KYC|Support|Officer|Manager|Executive|Agent|Verification)",
+        re.IGNORECASE,
+    ),
+    # "or just 'Name'" pattern
+    re.compile(
+        r"(?:or\s+)?just\s+['\"]([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})['\"]",
+        re.IGNORECASE,
+    ),
+]
+
+# WhatsApp Number Patterns (for scanning text)
+WHATSAPP_SCAN_PATTERNS = [
+    # "WhatsApp: +91 98765 43210" or "WhatsApp Number: 9876543210"
+    re.compile(
+        r"(?:whatsapp|wa|whats\s*app)[:\s]*(?:no\.?|number|num)?[:\s]*(?:\+91[-\s]*|91[-\s]+)?([6-9][-\s\d]{9,14})",
+        re.IGNORECASE,
+    ),
+    # "message/contact on WhatsApp +91..."
+    re.compile(
+        r"(?:message|contact|call|reach)\s+(?:me\s+)?(?:on\s+)?whatsapp[:\s]*(?:\+91[-\s]*|91[-\s]+)?([6-9][-\s\d]{9,14})",
+        re.IGNORECASE,
+    ),
+    # "send to WhatsApp +91..."
+    re.compile(
+        r"(?:send|share)\s+(?:it\s+|screenshot\s+)?(?:to\s+|on\s+)?(?:my\s+)?whatsapp[:\s]*(?:\+91[-\s]*|91[-\s]+)?([6-9][-\s\d]{9,14})",
+        re.IGNORECASE,
+    ),
+    # WhatsApp link: wa.me/919876543210
+    re.compile(r"wa\.me/(?:\+?91)?([6-9]\d{9})", re.IGNORECASE),
+]
 
 logger = structlog.get_logger()
 
@@ -35,7 +140,7 @@ class ExtractedEntity:
     """A single extracted intelligence entity."""
 
     value: str
-    intel_type: IntelligenceType
+    intel_type: str  # Type name (e.g., "bank_account", "upi_id", etc.)
     source: ExtractionSource = ExtractionSource.REGEX
     confidence: float = 1.0
     is_suspicious: bool = False
@@ -306,18 +411,14 @@ class IntelligenceExtractor:
         accounts = set()
         phone_set = phone_numbers or set()
 
-        for pattern_config in BANK_ACCOUNT_PATTERNS:
-            matches = pattern_config.pattern.findall(text)
+        for pattern in BANK_ACCOUNT_SCAN_PATTERNS:
+            matches = pattern.findall(text)
             for match in matches:
                 # Clean and validate
                 clean = self._clean_number(match)
                 if self._is_valid_bank_account(clean):
-                    # CRITICAL: Check if this looks like a phone number before accepting as bank account
-                    # This prevents misclassification of numbers like 919123456789 (12 digit phone with country code)
-                    if self._looks_like_phone(clean):
-                        continue
-                    # Also exclude if already in phone_set
-                    if clean in phone_set:
+                    # Exclude if it's a valid phone number (10 digits starting with 6-9)
+                    if len(clean) == 10 and clean[0] in "6789" and clean in phone_set:
                         continue
                     accounts.add(clean)
 
@@ -328,13 +429,13 @@ class IntelligenceExtractor:
         upi_ids = set()
 
         # Known provider pattern - these are definitely UPI IDs
-        matches = UPI_PATTERN.pattern.findall(text)
+        matches = UPI_KNOWN_PROVIDER_PATTERN.findall(text)
         upi_ids.update(m.lower() for m in matches)
 
         # Only use generic pattern if explicitly has "upi" keyword nearby
         # This avoids false positives from email-like patterns
         # Generic pattern (filter out emails)
-        generic_matches = UPI_GENERIC_PATTERN.pattern.findall(text)
+        generic_matches = UPI_GENERIC_SCAN_PATTERN.findall(text)
         for match in generic_matches:
             # Exclude if looks like email (has standard email TLD or common domain)
             if self._looks_like_email(match):
@@ -350,8 +451,8 @@ class IntelligenceExtractor:
         """Extract phone numbers."""
         phones = set()
 
-        for pattern_config in PHONE_PATTERNS:
-            matches = pattern_config.pattern.findall(text)
+        for pattern in PHONE_SCAN_PATTERNS:
+            matches = pattern.findall(text)
             for match in matches:
                 clean = self._clean_number(match)
                 if self._is_valid_phone(clean):
@@ -363,7 +464,7 @@ class IntelligenceExtractor:
         """Extract URLs, flagging suspicious ones."""
         urls = set()
 
-        matches = URL_PATTERN.pattern.findall(text)
+        matches = URL_SCAN_PATTERN.findall(text)
         for url in matches:
             # Clean trailing punctuation
             clean_url = url.rstrip(".,;:!?)")
@@ -378,7 +479,7 @@ class IntelligenceExtractor:
         """Extract email addresses."""
         emails = set()
 
-        matches = EMAIL_PATTERN.pattern.findall(text)
+        matches = EMAIL_SCAN_PATTERN.findall(text)
         for email in matches:
             # Exclude UPI IDs that look like emails
             if not self._is_upi_provider(email):
@@ -390,8 +491,8 @@ class IntelligenceExtractor:
         """Extract beneficiary/account holder names."""
         names = set()
 
-        for pattern_config in BENEFICIARY_NAME_PATTERNS:
-            matches = pattern_config.pattern.findall(text)
+        for pattern in BENEFICIARY_NAME_SCAN_PATTERNS:
+            matches = pattern.findall(text)
             for match in matches:
                 # Clean the name
                 clean_name = str(match).strip().strip("'\"")
@@ -405,7 +506,7 @@ class IntelligenceExtractor:
         """Extract Indian bank names."""
         banks = set()
 
-        matches = BANK_NAME_PATTERN.pattern.findall(text)
+        matches = BANK_NAME_SCAN_PATTERN.findall(text)
         for match in matches:
             # Normalize bank name (uppercase for abbreviations, title case for full names)
             clean_bank = str(match).strip()
@@ -424,7 +525,7 @@ class IntelligenceExtractor:
         """Extract IFSC codes."""
         ifsc_codes = set()
 
-        matches = IFSC_PATTERN.pattern.findall(text)
+        matches = IFSC_SCAN_PATTERN.findall(text)
         for match in matches:
             clean_ifsc = str(match).strip().upper()
             if self._is_valid_ifsc(clean_ifsc):
@@ -436,8 +537,8 @@ class IntelligenceExtractor:
         """Extract WhatsApp phone numbers."""
         whatsapp_nums = set()
 
-        for pattern_config in WHATSAPP_PATTERNS:
-            matches = pattern_config.pattern.findall(text)
+        for pattern in WHATSAPP_SCAN_PATTERNS:
+            matches = pattern.findall(text)
             for match in matches:
                 clean = self._clean_number(str(match))
                 if self._is_valid_phone(clean):
@@ -448,37 +549,7 @@ class IntelligenceExtractor:
     def _clean_number(self, number: str) -> str:
         """Remove formatting from numbers."""
         return re.sub(r"[-\s]", "", number)
-    def _looks_like_phone(self, number: str) -> bool:
-        """
-        Check if a number looks like a phone number, not a bank account.
-        
-        A number is definitely a phone if:
-        - It's exactly 10 digits starting with 6,7,8,9
-        - It starts with +91 or 91 followed by exactly 10 digits (12 digits total with 91 prefix)
-        - It matches Indian phone patterns
-        """
-        if not number or not number.isdigit():
-            return False
-        
-        # Pattern 1: Exactly 10 digits starting with 6,7,8,9 → Definitely a phone
-        if len(number) == 10 and number[0] in "6789":
-            return True
-        
-        # Pattern 2: 12 digits starting with 91 followed by valid 10-digit phone
-        # e.g., 919876543210 → 91 + 9876543210
-        if len(number) == 12 and number.startswith("91"):
-            suffix = number[2:]  # Remove the 91 prefix
-            if suffix[0] in "6789":  # Check if remaining 10 digits starts with 6-9
-                return True
-        
-        # Pattern 3: 13 digits starting with +91 → already handled by _clean_number
-        # but just in case
-        if len(number) == 13 and number.startswith("91"):
-            suffix = number[2:]
-            if len(suffix) == 10 and suffix[0] in "6789":
-                return True
-        
-        return False
+
     def _is_valid_bank_account(self, number: str) -> bool:
         """Validate bank account number."""
         # Must be 9-18 digits
@@ -491,7 +562,39 @@ class IntelligenceExtractor:
             return False
         if len(set(number)) == 1:  # All same digit
             return False
+        
+        # Exclude phone-like numbers (10-12 digits that look like phones)
+        if self._looks_like_phone(number):
+            return False
+        
         return True
+    
+    def _looks_like_phone(self, number: str) -> bool:
+        """
+        Check if a number looks like a phone number.
+        
+        Phone patterns:
+        - 10 digits starting with 6, 7, 8, or 9
+        - 12 digits starting with 91 followed by 6, 7, 8, or 9
+        - 11 digits starting with 91 (less common but possible)
+        """
+        if not number.isdigit():
+            return False
+        
+        # 10 digits starting with 6-9 = phone
+        if len(number) == 10 and number[0] in "6789":
+            return True
+        
+        # 12 digits: 91 + 10 digits starting with 6-9 = phone with country code
+        if len(number) == 12 and number.startswith("91") and number[2] in "6789":
+            return True
+        
+        # 11 digits: 91 + 9 digits (less common, but could be truncated)
+        # Being conservative here - only if starts with 91 and next digit is 6-9
+        if len(number) == 11 and number.startswith("91") and number[2] in "6789":
+            return True
+        
+        return False
 
     def _is_valid_phone(self, number: str) -> bool:
         """Validate Indian phone number."""
@@ -499,7 +602,7 @@ class IntelligenceExtractor:
         clean = number
         if clean.startswith("+91"):
             clean = clean[3:]
-        elif clean.startswith("91") and len(clean) == 12:
+        elif clean.startswith("91") and len(clean) in (11, 12):
             clean = clean[2:]
         # Remove any remaining non-digits
         clean = re.sub(r"\D", "", clean)
@@ -551,6 +654,128 @@ class IntelligenceExtractor:
         if not ifsc[5:].isalnum():
             return False
         return True
+
+    # -------------------------------------------------------------------------
+    # LLM Intelligence Validation (Hybrid Approach)
+    # -------------------------------------------------------------------------
+
+    def validate_llm_extraction(self, llm_intel: ExtractedIntelligence) -> ExtractedIntelligence:
+        """
+        Validate and clean LLM-extracted intelligence using regex patterns.
+
+        This is the hybrid approach: LLM extracts (flexible), regex validates (reliable).
+        - UPI IDs: Must match known provider patterns
+        - Bank accounts: Must be valid length (9-18 digits)
+        - IFSC codes: Must match format [A-Z]{4}0[A-Z0-9]{6}
+        - Phone numbers: Light validation (keep LLM flexibility for formatting)
+        - Beneficiary names, URLs, other_critical_info: Keep as-is (LLM is better)
+        """
+        validated = ExtractedIntelligence(
+            bankAccounts=[acc for acc in llm_intel.bankAccounts if self._validate_bank_account(acc)],
+            upiIds=[upi for upi in llm_intel.upiIds if self._validate_upi_id(upi)],
+            phoneNumbers=llm_intel.phoneNumbers,  # Keep LLM's phone extraction (more flexible)
+            phishingLinks=llm_intel.phishingLinks,  # Keep as-is (LLM understands context)
+            emails=llm_intel.emails,  # Keep as-is
+            beneficiaryNames=llm_intel.beneficiaryNames,  # Keep as-is
+            bankNames=llm_intel.bankNames,  # Keep as-is
+            ifscCodes=[code for code in llm_intel.ifscCodes if self._validate_ifsc(code)],
+            whatsappNumbers=llm_intel.whatsappNumbers,  # Keep as-is
+            other_critical_info=llm_intel.other_critical_info,  # Keep as-is (LLM is better)
+        )
+
+        self.logger.info(
+            "LLM extraction validated",
+            bank_accounts_in=len(llm_intel.bankAccounts),
+            bank_accounts_out=len(validated.bankAccounts),
+            upi_ids_in=len(llm_intel.upiIds),
+            upi_ids_out=len(validated.upiIds),
+            ifsc_codes_in=len(llm_intel.ifscCodes),
+            ifsc_codes_out=len(validated.ifscCodes),
+        )
+
+        return validated
+
+    def _validate_bank_account(self, account: str) -> bool:
+        """Validate bank account number (9-18 digits)."""
+        digits = re.sub(r'\D', '', account)
+        return 9 <= len(digits) <= 18
+
+    def _validate_upi_id(self, upi: str) -> bool:
+        """Validate UPI ID matches known provider patterns."""
+        # Use simplified check for user@provider format
+        return bool(re.match(r'[\w.-]+@[a-zA-Z]+', upi))
+
+    def _validate_ifsc(self, code: str) -> bool:
+        """Validate IFSC code format."""
+        return bool(re.match(r'^[A-Z]{4}0[A-Z0-9]{6}$', code.upper()))
+
+    # -------------------------------------------------------------------------
+    # Intelligence Merging (Regex + LLM)
+    # -------------------------------------------------------------------------
+
+    def merge_intelligence(
+        self,
+        regex_intel: ExtractionResult,
+        llm_intel: ExtractedIntelligence | None,
+    ) -> ExtractedIntelligence:
+        """
+        Merge regex-extracted and LLM-extracted intelligence.
+
+        Args:
+            regex_intel: Result from regex extraction (ExtractionResult)
+            llm_intel: Result from LLM extraction (ExtractedIntelligence), may be None
+
+        Returns:
+            Merged and deduplicated ExtractedIntelligence
+        """
+        # Start with regex results converted to ExtractedIntelligence format
+        merged = ExtractedIntelligence(
+            bankAccounts=list(set(regex_intel.bank_accounts)),
+            upiIds=list(set(regex_intel.upi_ids)),
+            phoneNumbers=list(set(regex_intel.phone_numbers)),
+            phishingLinks=list(set(regex_intel.phishing_links)),
+            emails=list(set(regex_intel.emails)),
+            beneficiaryNames=list(set(regex_intel.beneficiary_names)),
+            bankNames=list(set(regex_intel.bank_names)),
+            ifscCodes=list(set(regex_intel.ifsc_codes)),
+            whatsappNumbers=list(set(regex_intel.whatsapp_numbers)),
+            other_critical_info=[],
+        )
+
+        if llm_intel is None:
+            return merged
+
+        # Validate LLM extraction before merging
+        validated_llm = self.validate_llm_extraction(llm_intel)
+
+        # Merge and deduplicate
+        merged.bankAccounts = list(set(merged.bankAccounts + validated_llm.bankAccounts))
+        merged.upiIds = list(set(merged.upiIds + validated_llm.upiIds))
+        merged.phoneNumbers = list(set(merged.phoneNumbers + validated_llm.phoneNumbers))
+        merged.phishingLinks = list(set(merged.phishingLinks + validated_llm.phishingLinks))
+        merged.emails = list(set(merged.emails + validated_llm.emails))
+        merged.beneficiaryNames = list(set(merged.beneficiaryNames + validated_llm.beneficiaryNames))
+        merged.bankNames = list(set(merged.bankNames + validated_llm.bankNames))
+        merged.ifscCodes = list(set(merged.ifscCodes + validated_llm.ifscCodes))
+        merged.whatsappNumbers = list(set(merged.whatsappNumbers + validated_llm.whatsappNumbers))
+
+        # Merge other_critical_info (deduplicate by label+value)
+        seen_other = {(item.label, item.value) for item in merged.other_critical_info}
+        for item in validated_llm.other_critical_info:
+            if (item.label, item.value) not in seen_other:
+                merged.other_critical_info.append(item)
+                seen_other.add((item.label, item.value))
+
+        self.logger.info(
+            "Intelligence merged (regex + LLM)",
+            total_bank_accounts=len(merged.bankAccounts),
+            total_upi_ids=len(merged.upiIds),
+            total_phone_numbers=len(merged.phoneNumbers),
+            total_urls=len(merged.phishingLinks),
+            total_other_info=len(merged.other_critical_info),
+        )
+
+        return merged
 
 
 # Singleton instance

@@ -10,6 +10,9 @@ from src.api.schemas import (
     EngagementMetrics,
     ErrorResponse,
     ExtractedIntelligence,
+    OtherIntelItem,
+    ScamType,
+    SenderType,
     StatusType,
 )
 from src.detection.detector import ScamDetector
@@ -64,6 +67,8 @@ async def analyze_message(request: AnalyzeRequest) -> AnalyzeResponse:
             return AnalyzeResponse(
                 status=StatusType.SUCCESS,
                 scamDetected=False,
+                scamType=None,
+                confidence=detection_result.confidence,
                 agentNotes="No scam indicators detected",
             )
 
@@ -77,8 +82,12 @@ async def analyze_message(request: AnalyzeRequest) -> AnalyzeResponse:
         ])
         intelligence = extractor.extract(all_messages_text)
         
-        # Calculate correct turn number (history + current message)
-        current_turn = len(request.conversationHistory) + 1
+        # Calculate correct turn number: count scammer messages in history + current message
+        # Turn = number of scammer messages (each scammer message = 1 turn)
+        scammer_messages_in_history = sum(
+            1 for m in request.conversationHistory if m.sender == SenderType.SCAMMER
+        )
+        current_turn = scammer_messages_in_history + 1  # +1 for current scammer message
         
         # Check if high-value intelligence is complete (exit condition)
         policy = EngagementPolicy()
@@ -125,9 +134,19 @@ async def analyze_message(request: AnalyzeRequest) -> AnalyzeResponse:
                 f"{len(intelligence.beneficiary_names)} names"
             )
             
+            # Convert scam_type string to ScamType enum
+            scam_type_enum = None
+            if detection_result.scam_type:
+                try:
+                    scam_type_enum = ScamType(detection_result.scam_type)
+                except ValueError:
+                    scam_type_enum = ScamType.OTHERS
+            
             return AnalyzeResponse(
                 status=StatusType.SUCCESS,
                 scamDetected=True,
+                scamType=scam_type_enum,
+                confidence=detection_result.confidence,
                 engagementMetrics=EngagementMetrics(
                     engagementDurationSeconds=0,
                     totalMessagesExchanged=current_turn,
@@ -137,6 +156,11 @@ async def analyze_message(request: AnalyzeRequest) -> AnalyzeResponse:
                     upiIds=intelligence.upi_ids,
                     phoneNumbers=intelligence.phone_numbers,
                     phishingLinks=intelligence.phishing_links,
+                    emails=intelligence.emails,
+                    beneficiaryNames=intelligence.beneficiary_names,
+                    bankNames=intelligence.bank_names,
+                    ifscCodes=intelligence.ifsc_codes,
+                    whatsappNumbers=intelligence.whatsapp_numbers,
                 ),
                 agentNotes=exit_notes,
                 agentResponse=exit_response,
@@ -159,20 +183,79 @@ async def analyze_message(request: AnalyzeRequest) -> AnalyzeResponse:
             },
         )
 
-        # Step 4: Build response
-        return AnalyzeResponse(
-            status=StatusType.SUCCESS,
-            scamDetected=True,
-            engagementMetrics=EngagementMetrics(
-                engagementDurationSeconds=engagement_result.duration_seconds,
-                totalMessagesExchanged=current_turn,
-            ),
-            extractedIntelligence=ExtractedIntelligence(
+        # Log the raw agent response for debugging
+        log.info(
+            "Agent engagement complete",
+            agent_response=engagement_result.response if engagement_result.response else None,
+            has_extracted_intel=engagement_result.extracted_intelligence is not None,
+        )
+        
+        # Log LLM-extracted intelligence if available (for debugging)
+        if engagement_result.extracted_intelligence:
+            llm_intel = engagement_result.extracted_intelligence
+            log.info(
+                "LLM extracted intelligence (raw)",
+                bank_accounts=llm_intel.bankAccounts,
+                upi_ids=llm_intel.upiIds,
+                phone_numbers=llm_intel.phoneNumbers,
+                beneficiary_names=llm_intel.beneficiaryNames,
+                urls=llm_intel.phishingLinks,
+                whatsapp_numbers=llm_intel.whatsappNumbers,
+                ifsc_codes=llm_intel.ifscCodes,
+                other_critical_info=[item.model_dump() for item in llm_intel.other_critical_info] if llm_intel.other_critical_info else [],
+            )
+
+        # Step 4: Merge LLM-extracted intelligence with regex extraction
+        # This combines the best of both worlds:
+        # - Regex: Fast, deterministic, catches standard formats
+        # - LLM: Flexible, catches obfuscated data, contextual references
+        if engagement_result.extracted_intelligence:
+            merged_intel = extractor.merge_intelligence(
+                regex_intel=intelligence,
+                llm_intel=engagement_result.extracted_intelligence,
+            )
+            log.info(
+                "Merged LLM + regex intelligence",
+                bank_accounts=len(merged_intel.bankAccounts),
+                upi_ids=len(merged_intel.upiIds),
+                phone_numbers=len(merged_intel.phoneNumbers),
+                beneficiary_names=len(merged_intel.beneficiaryNames),
+                other_info=len(merged_intel.other_critical_info),
+            )
+        else:
+            # Fallback to regex-only extraction
+            merged_intel = ExtractedIntelligence(
                 bankAccounts=intelligence.bank_accounts,
                 upiIds=intelligence.upi_ids,
                 phoneNumbers=intelligence.phone_numbers,
                 phishingLinks=intelligence.phishing_links,
+                emails=intelligence.emails,
+                beneficiaryNames=intelligence.beneficiary_names,
+                bankNames=intelligence.bank_names,
+                ifscCodes=intelligence.ifsc_codes,
+                whatsappNumbers=intelligence.whatsapp_numbers,
+                other_critical_info=[],
+            )
+
+        # Step 5: Build response
+        # Convert scam_type string to ScamType enum
+        scam_type_enum = None
+        if detection_result.scam_type:
+            try:
+                scam_type_enum = ScamType(detection_result.scam_type)
+            except ValueError:
+                scam_type_enum = ScamType.OTHERS
+        
+        return AnalyzeResponse(
+            status=StatusType.SUCCESS,
+            scamDetected=True,
+            scamType=scam_type_enum,
+            confidence=detection_result.confidence,
+            engagementMetrics=EngagementMetrics(
+                engagementDurationSeconds=engagement_result.duration_seconds,
+                totalMessagesExchanged=current_turn,
             ),
+            extractedIntelligence=merged_intel,
             agentNotes=engagement_result.notes,
             agentResponse=engagement_result.response,
         )

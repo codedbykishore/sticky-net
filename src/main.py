@@ -1,5 +1,7 @@
 """FastAPI application entry point."""
 
+import logging
+import sys
 from contextlib import asynccontextmanager
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -17,7 +19,14 @@ from config.settings import get_settings
 # Static files directory
 STATIC_DIR = Path(__file__).parent / "static"
 
-# Configure structured logging
+# Configure standard library logging to output to console
+logging.basicConfig(
+    format="%(message)s",
+    stream=sys.stdout,
+    level=logging.INFO,
+)
+
+# Configure structured logging with console-friendly output
 structlog.configure(
     processors=[
         structlog.stdlib.filter_by_level,
@@ -28,7 +37,7 @@ structlog.configure(
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
         structlog.processors.UnicodeDecoder(),
-        structlog.processors.JSONRenderer(),
+        structlog.dev.ConsoleRenderer(colors=True),  # Human-readable output for dev
     ],
     wrapper_class=structlog.stdlib.BoundLogger,
     context_class=dict,

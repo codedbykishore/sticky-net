@@ -86,19 +86,25 @@ Sticky-Net is an AI-powered honeypot that:
                                                 │
                                                 ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                   STAGE 3: AI Engagement Agent                       │
+│          STAGE 3: AI Engagement Agent (One-Pass JSON)               │
 │                (Gemini 3 Pro: ~500ms, $0.01/call)                   │
 ├─────────────────────────────────────────────────────────────────────┤
 │  MODEL: gemini-3-pro-preview                                        │
 │                                                                     │
+│  ╔═══════════════════════════════════════════════════════════════╗ │
+│  ║  ONE-PASS ARCHITECTURE: Single LLM call returns BOTH:         ║ │
+│  ║  • Conversational reply (persona-driven engagement)           ║ │
+│  ║  • Extracted intelligence (bank accounts, UPI IDs, etc.)      ║ │
+│  ╚═══════════════════════════════════════════════════════════════╝ │
+│                                                                     │
 │  ┌───────────────┐  ┌───────────────┐  ┌───────────────────────┐   │
-│  │ Persona       │  │ Conversation  │  │ Intelligence          │   │
-│  │ Manager       │  │ Memory        │  │ Extractor             │   │
+│  │ Persona       │  │ Conversation  │  │ Hybrid Extraction     │   │
+│  │ State Tracker │  │ Memory        │  │ (LLM + Regex)         │   │
 │  ├───────────────┤  ├───────────────┤  ├───────────────────────┤   │
-│  │ Emotional     │  │ Full history  │  │ Bank account regex    │   │
-│  │ state machine │  │ tracking      │  │ UPI ID patterns       │   │
-│  │ Turn-based    │  │ Context       │  │ Phishing URL capture  │   │
-│  │ adaptation    │  │ windowing     │  │ Entity validation     │   │
+│  │ Pure state    │  │ Full history  │  │ LLM: flexible extract │   │
+│  │ tracking      │  │ tracking      │  │ Regex: validation     │   │
+│  │ No hardcoded  │  │ Context       │  │ Merge & deduplicate   │   │
+│  │ modifiers     │  │ windowing     │  │ other_critical_info   │   │
 │  └───────────────┘  └───────────────┘  └───────────────────────┘   │
 │                                                                     │
 │  EXIT CONDITIONS (EngagementPolicy):                                │
@@ -116,24 +122,34 @@ Sticky-Net is an AI-powered honeypot that:
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    STAGE 4: Response Builder                         │
 ├─────────────────────────────────────────────────────────────────────┤
-│  OUTPUT:                                                            │
+│  AGENT JSON OUTPUT (from One-Pass LLM call):                        │
+│  {                                                                  │
+│    "reply_text": "Oh no, which account? I have SBI and HDFC...",   │
+│    "emotional_tone": "panicked",                                    │
+│    "extracted_intelligence": {                                      │
+│      "bank_accounts": ["1234567890"],                               │
+│      "upi_ids": ["scammer@paytm"],                                  │
+│      "phone_numbers": ["+91-88888-99999"],                          │
+│      "beneficiary_names": ["Rahul Kumar"],                          │
+│      "urls": [],                                                    │
+│      "whatsapp_numbers": [],                                        │
+│      "ifsc_codes": ["SBIN0001234"],                                 │
+│      "crypto_addresses": [],                                        │
+│      "other_critical_info": [                                       │
+│        {"label": "TeamViewer ID", "value": "123456789"}             │
+│      ]                                                              │
+│    }                                                                │
+│  }                                                                  │
+│                                                                     │
+│  API RESPONSE (final):                                              │
 │  {                                                                  │
 │    "status": "success",                                             │
 │    "scamDetected": true,                                            │
 │    "confidence": 0.87,                                              │
 │    "scamType": "banking_fraud",                                     │
-│    "response": "Oh no, which account? I have SBI and HDFC...",     │
-│    "engagementMetrics": {                                           │
-│      "turnNumber": 3,                                               │
-│      "engagementMode": "aggressive",                                │
-│      "engagementDurationSeconds": 180,                              │
-│      "shouldContinue": true                                         │
-│    },                                                               │
-│    "extractedIntelligence": {                                       │
-│      "bankAccounts": ["1234567890"],                                │
-│      "upiIds": ["scammer@paytm"],                                   │
-│      "phishingLinks": []                                            │
-│    },                                                               │
+│    "agentResponse": "Oh no, which account? I have SBI and HDFC...",│
+│    "engagementMetrics": { ... },                                    │
+│    "extractedIntelligence": { ... merged LLM + regex ... },        │
 │    "agentNotes": "Scammer used RBI impersonation tactic"           │
 │  }                                                                  │
 │                                                                     │
@@ -343,12 +359,19 @@ class EngagementPolicy:
 
 **Model**: `gemini-3-pro-preview` (sophisticated reasoning for believable responses)
 
+**Architecture**: One-Pass JSON — single LLM call returns both conversational reply AND extracted intelligence.
+
+**Design Rationale**:
+- **Lower latency**: One API call instead of two (engagement + extraction)
+- **Context-awareness**: Reply can naturally reference what was just extracted
+- **Simplicity**: No orchestration needed between separate calls
+
 ```python
 class HoneypotAgent:
     def __init__(self):
         self.client = genai.Client()
         self.model = "gemini-3-pro-preview"
-        self.persona_manager = PersonaManager()
+        self.persona = Persona()  # Pure state tracker
     
     async def engage(
         self,
@@ -358,74 +381,128 @@ class HoneypotAgent:
         state: ConversationState
     ) -> EngagementResult:
         
-        persona = self.persona_manager.get_persona(state)
+        # Persona state passed to prompt (no hardcoded modifiers)
+        persona_context = self.persona.get_state_context(state.turn_count)
         
         response = self.client.models.generate_content(
             model=self.model,
-            contents=self._build_prompt(message, history, persona),
+            contents=self._build_prompt(message, history, persona_context),
             config=types.GenerateContentConfig(
                 thinking_config=types.ThinkingConfig(
-                    thinking_level=types.ThinkingLevel.HIGH  # Deep reasoning
+                    thinking_level=types.ThinkingLevel.HIGH
                 ),
                 system_instruction=HONEYPOT_SYSTEM_PROMPT
             )
         )
         
+        # LLM returns JSON with BOTH reply and extraction
+        parsed = self._parse_json_response(response.text)
+        # {
+        #   "reply_text": "conversational response",
+        #   "emotional_tone": "panicked",
+        #   "extracted_intelligence": { ... }
+        # }
+        
         return EngagementResult(
-            response=response.text,
-            persona_state=persona.emotional_state,
+            response=parsed["reply_text"],
+            emotional_tone=parsed["emotional_tone"],
+            extracted_intelligence=parsed["extracted_intelligence"],
             turn_number=state.turn_count
         )
 ```
 
-### 5. Persona Manager (`src/agents/persona.py`)
+### 5. Persona State Tracker (`src/agents/persona.py`)
 
-**Purpose**: Maintain believable human character across turns
+**Purpose**: Pure state tracking for persona — no hardcoded response modifiers
+
+**Key Change**: Removed `get_emotional_modifier()` that was prepending strings like "what do i do". 
+The LLM now generates natural emotional responses based on state passed in the prompt.
 
 ```python
-class PersonaManager:
+class Persona:
+    """Pure state tracker - LLM handles emotional expression"""
+    
     EMOTIONAL_STATES = {
         "calm": "Slightly confused, asking for clarification",
-        "anxious": "Worried, expressing concern about account",
+        "anxious": "Worried, expressing concern about account", 
         "panicked": "Very scared, willing to do anything to fix it",
         "cooperative": "Ready to share information to 'resolve' issue"
     }
     
-    def get_persona_context(self, state: ConversationState) -> str:
-        emotional_state = self._calculate_emotion(
-            turn=state.turn_count,
-            scam_intensity=state.confidence
-        )
+    def get_state_context(self, turn_count: int) -> dict:
+        """Returns state info for prompt - no response generation"""
+        emotional_state = self._calculate_emotion(turn_count)
         
-        return f"""
-        You are a naive, trusting person who:
-        - Emotional state: {self.EMOTIONAL_STATES[emotional_state]}
-        - Turn {state.turn_count}: {"confused" if turn < 5 else "cooperative"}
-        - Ask questions that extract: bank details, UPI IDs, links
-        - NEVER reveal you know it's a scam
-        """
+        return {
+            "emotional_state": emotional_state,
+            "emotional_description": self.EMOTIONAL_STATES[emotional_state],
+            "turn_number": turn_count,
+            "cooperation_level": "high" if turn_count > 5 else "medium"
+        }
+    
+    def _calculate_emotion(self, turn: int) -> str:
+        if turn <= 2:
+            return "calm"
+        elif turn <= 5:
+            return "anxious"
+        elif turn <= 10:
+            return "panicked"
+        return "cooperative"
 ```
 
 ### 6. Intelligence Extractor (`src/intelligence/extractor.py`)
 
-**Purpose**: Extract actionable data using regex patterns
+**Purpose**: Hybrid extraction using LLM + regex validation
+
+**Hybrid Approach**:
+- **LLM extraction**: Flexible, catches obfuscated data, phone numbers in any format
+- **Regex validation**: Validates structured fields (UPI IDs, IFSC codes, bank accounts)
+- **Results merged**: Both sources combined and deduplicated
 
 ```python
 class IntelligenceExtractor:
-    PATTERNS = {
+    """Regex validation patterns for structured data"""
+    
+    VALIDATION_PATTERNS = {
         "bank_account": r'\b\d{9,18}\b',
         "upi_id": r'\b[\w.-]+@[a-zA-Z]+\b',
+        "ifsc_code": r'\b[A-Z]{4}0[A-Z0-9]{6}\b',
         "phone": r'\b[6-9]\d{9}\b',
         "url": r'https?://[^\s<>"{}|\\^`\[\]]+',
     }
     
-    def extract(self, text: str) -> ExtractedIntelligence:
+    def merge_intelligence(
+        self,
+        llm_extracted: dict,    # From One-Pass JSON
+        conversation_text: str   # For regex validation
+    ) -> ExtractedIntelligence:
+        """Merge LLM extraction with regex validation"""
+        
+        # Regex extraction from conversation
+        regex_extracted = self._extract_with_regex(conversation_text)
+        
+        # Merge and deduplicate
         return ExtractedIntelligence(
-            bank_accounts=self._find_all("bank_account", text),
-            upi_ids=self._find_all("upi_id", text),
-            phishing_links=self._find_suspicious_urls(text)
+            bank_accounts=self._dedupe(llm_extracted.get("bank_accounts", []) + 
+                                       regex_extracted.bank_accounts),
+            upi_ids=self._dedupe(llm_extracted.get("upi_ids", []) + 
+                                 regex_extracted.upi_ids),
+            phone_numbers=self._dedupe(llm_extracted.get("phone_numbers", [])),
+            beneficiary_names=llm_extracted.get("beneficiary_names", []),
+            urls=self._dedupe(llm_extracted.get("urls", []) + 
+                              regex_extracted.urls),
+            whatsapp_numbers=llm_extracted.get("whatsapp_numbers", []),
+            ifsc_codes=self._dedupe(llm_extracted.get("ifsc_codes", [])),
+            crypto_addresses=llm_extracted.get("crypto_addresses", []),
+            other_critical_info=llm_extracted.get("other_critical_info", [])
         )
 ```
+
+**`other_critical_info` Field**: Captures high-value data that doesn't fit standard fields:
+- Crypto wallet addresses
+- Remote desktop IDs (TeamViewer, AnyDesk)
+- Reference/ticket numbers
+- Any other scammer-provided identifiers
 
 ---
 
@@ -522,7 +599,13 @@ class ConversationState:
   "extractedIntelligence": {
     "bankAccounts": [],
     "upiIds": [],
-    "phishingLinks": []
+    "phoneNumbers": [],
+    "beneficiaryNames": [],
+    "urls": [],
+    "whatsappNumbers": [],
+    "ifscCodes": [],
+    "cryptoAddresses": [],
+    "otherCriticalInfo": []
   },
   "agentNotes": "Detected urgency + threat tactics. Engagement initiated."
 }
@@ -555,4 +638,7 @@ class ConversationState:
 | Confidence only increases | Prevents false negatives from state oscillation |
 | State machine (monitor→engage→complete) | Clear lifecycle management |
 | Exit conditions | Prevents infinite loops, saves costs |
-| Regex for intelligence extraction | Deterministic, fast, reliable for structured data |
+| **One-Pass JSON architecture** | Single LLM call returns reply + extraction — lower latency, context-aware responses, simpler orchestration |
+| **Hybrid extraction (LLM + regex)** | LLM catches obfuscated/flexible data, regex validates structured fields (UPI, IFSC) |
+| **Pure state persona tracker** | LLM generates natural emotional responses from state context — no hardcoded modifiers |
+| **`other_critical_info` field** | Captures high-value data that doesn't fit standard fields (crypto, remote IDs) |
