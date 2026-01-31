@@ -62,17 +62,29 @@ class ScamDetector:
         )
 
         # Confidence can only INCREASE from previous (prevents oscillation)
+        # This maintains persistent suspicion once a conversation is flagged
         final_confidence = ai_result.confidence
         if previous_result is not None:
             final_confidence = max(final_confidence, previous_result.confidence)
 
-        is_scam = final_confidence >= self.SCAM_THRESHOLD
+        # Determine if this is a scam based on AI classification AND confidence threshold
+        # The threshold ensures we only act on high-confidence classifications
+        if ai_result.is_scam:
+            # AI says it's a scam - check if confidence meets threshold
+            is_scam = final_confidence >= self.SCAM_THRESHOLD
+        else:
+            # AI says it's NOT a scam - trust the AI unless previous result overrides
+            is_scam = False
+            if previous_result and previous_result.is_scam:
+                # Once flagged as scam, maintain that status (persistent suspicion)
+                is_scam = True
 
         self.logger.info(
             "Classification complete",
             is_scam=is_scam,
             confidence=final_confidence,
             scam_type=ai_result.scam_type,
+            ai_is_scam=ai_result.is_scam,
         )
 
         return DetectionResult(

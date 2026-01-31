@@ -8,14 +8,14 @@ from pydantic import BaseModel, Field
 
 
 class SenderType(str, Enum):
-    """Message sender type."""
+    """Common sender types (for reference only)."""
 
     SCAMMER = "scammer"
     USER = "user"
 
 
 class ChannelType(str, Enum):
-    """Communication channel type."""
+    """Common communication channel types (for reference only)."""
 
     SMS = "SMS"
     WHATSAPP = "WhatsApp"
@@ -26,15 +26,15 @@ class ChannelType(str, Enum):
 class Message(BaseModel):
     """Incoming message model."""
 
-    sender: SenderType
-    text: Annotated[str, Field(min_length=1, max_length=5000)]
+    sender: str  # Accept any sender identifier
+    text: Annotated[str, Field(min_length=1, max_length=10000)]  # Increased limit for long scam messages
     timestamp: datetime
 
 
 class ConversationMessage(BaseModel):
     """Message in conversation history."""
 
-    sender: SenderType
+    sender: str  # Accept any sender identifier
     text: str
     timestamp: datetime
 
@@ -42,7 +42,7 @@ class ConversationMessage(BaseModel):
 class Metadata(BaseModel):
     """Request metadata."""
 
-    channel: ChannelType = ChannelType.SMS
+    channel: str = "SMS"  # Accept any string (Telegram, Voice, App, etc.)
     language: str = "English"
     locale: str = "IN"
 

@@ -370,7 +370,9 @@ Return ONLY valid JSON (no markdown):
 
         lines = []
         for msg in history[-5:]:  # Last 5 messages for context
-            sender = "SCAMMER" if msg.sender.value == "scammer" else "USER"
+            # Handle both enum and string sender types
+            sender_str = msg.sender.value if hasattr(msg.sender, 'value') else str(msg.sender)
+            sender = "SCAMMER" if sender_str == "scammer" else "USER"
             lines.append(f"[{sender}]: {msg.text}")
 
         return "\n".join(lines)

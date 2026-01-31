@@ -74,7 +74,10 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # CORS middleware (configure for production)
+    # Custom middleware (added first, runs after CORS)
+    setup_middleware(app)
+
+    # CORS middleware (added last, runs first to handle preflight)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"] if settings.debug else [],
@@ -82,9 +85,6 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    # Custom middleware
-    setup_middleware(app)
 
     # Include routers
     app.include_router(router)
