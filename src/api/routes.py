@@ -64,23 +64,35 @@ async def analyze_message(request: AnalyzeRequest) -> AnalyzeResponse:
 
         if not detection_result.is_scam:
             log.info("Message not detected as scam")
+            
+            # Generate a simple conversational response for non-scam messages
+            normal_responses = [
+                "Hello! How can I help you today?",
+                "Hi there! Is everything alright?",
+                "Hey! What can I do for you?",
+                "Hello! Yes, I'm here. What's up?",
+                "Hi! I'm listening. What did you want to tell me?",
+            ]
+            
             return AnalyzeResponse(
                 status=StatusType.SUCCESS,
                 scamDetected=False,
                 scamType=None,
                 confidence=detection_result.confidence,
                 agentNotes="No scam indicators detected",
+                agentResponse=random.choice(normal_responses),
             )
 
         log.info("Scam detected", confidence=detection_result.confidence)
 
         # Step 2: Extract intelligence FIRST to check for exit condition
+        # Only extract from SCAMMER messages (not from user/AI responses)
         extractor = IntelligenceExtractor()
-        all_messages_text = " ".join([
-            *[m.text for m in request.conversationHistory],
-            request.message.text,
-        ])
-        intelligence = extractor.extract(all_messages_text)
+        scammer_messages_text = " ".join([
+            m.text for m in request.conversationHistory if m.sender == SenderType.SCAMMER
+        ] + [request.message.text])  # Include current scammer message
+        
+        intelligence = extractor.extract(scammer_messages_text)
         
         # Calculate correct turn number: count scammer messages in history + current message
         # Turn = number of scammer messages (each scammer message = 1 turn)
@@ -138,16 +150,46 @@ async def analyze_message(request: AnalyzeRequest) -> AnalyzeResponse:
                 phone_numbers=len(intelligence.phone_numbers),
                 upi_ids=len(intelligence.upi_ids),
                 beneficiary_names=len(intelligence.beneficiary_names),
+                ifsc_codes=len(intelligence.ifsc_codes),
+                phishing_links=len(intelligence.phishing_links),
+                whatsapp_numbers=len(intelligence.whatsapp_numbers),
             )
             # Use exit response instead of engaging further
             exit_response = random.choice(exit_responses)
-            exit_notes = (
-                f"Mode: exit | Intelligence: COMPLETE | "
-                f"Turn: {current_turn} | "
-                f"Extracted: {len(intelligence.bank_accounts)} bank accounts, "
-                f"{len(intelligence.phone_numbers)} phones, "
-                f"{len(intelligence.upi_ids)} UPIs, "
-                f"{len(intelligence.beneficiary_names)} names"
+            
+            # Generate proper exit notes with all intelligence
+            # Use the same format as shown during conversation
+            from src.agents.honeypot_agent import get_agent
+            from src.agents.persona import EmotionalState
+            from src.agents.policy import EngagementMode
+            
+            agent = get_agent()
+            # Create a minimal persona for exit notes
+            class ExitPersona:
+                emotional_state = EmotionalState.CALM
+            
+            # Determine engagement mode based on confidence (same logic as policy)
+            engagement_mode = EngagementMode.AGGRESSIVE if detection_result.confidence > 0.85 else EngagementMode.CAUTIOUS
+            
+            merged_intel = ExtractedIntelligence(
+                bankAccounts=intelligence.bank_accounts,
+                upiIds=intelligence.upi_ids,
+                phoneNumbers=intelligence.phone_numbers,
+                phishingLinks=intelligence.phishing_links,
+                emails=intelligence.emails,
+                beneficiaryNames=intelligence.beneficiary_names,
+                bankNames=intelligence.bank_names,
+                ifscCodes=intelligence.ifsc_codes,
+                whatsappNumbers=intelligence.whatsapp_numbers,
+            )
+            
+            # Use the same mode as would have been used during conversation
+            exit_notes = agent._generate_notes(
+                detection=detection_result,
+                persona=ExitPersona(),
+                mode=engagement_mode,
+                turn_number=current_turn,
+                extracted_intel=merged_intel,
             )
             
             # Convert scam_type string to ScamType enum
@@ -268,6 +310,17 @@ async def analyze_message(request: AnalyzeRequest) -> AnalyzeResponse:
             agent_response = "Sorry, I'm having trouble understanding. Can you repeat that?"
             log.warning("Agent response was None, using fallback")
         
+        # Regenerate agent notes with merged intelligence counts
+        from src.agents.honeypot_agent import get_agent
+        agent = get_agent()
+        final_notes = agent._generate_notes(
+            detection=detection_result,
+            persona=agent.persona_manager.get_or_create_persona(engagement_result.conversation_id),
+            mode=engagement_result.engagement_mode,
+            turn_number=current_turn,
+            extracted_intel=merged_intel,
+        )
+        
         return AnalyzeResponse(
             status=StatusType.SUCCESS,
             scamDetected=True,
@@ -278,7 +331,7 @@ async def analyze_message(request: AnalyzeRequest) -> AnalyzeResponse:
                 totalMessagesExchanged=current_turn,
             ),
             extractedIntelligence=merged_intel,
-            agentNotes=engagement_result.notes,
+            agentNotes=final_notes,
             agentResponse=agent_response,
         )
 

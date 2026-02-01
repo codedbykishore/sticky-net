@@ -120,7 +120,7 @@ const Navigation = ({ onNavClick, onLiveDemo }) => {
             Live Demo
           </button>
           <a
-            href="https://github.com"
+            href="https://github.com/codedbykishore/sticky-net"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
@@ -767,7 +767,8 @@ const TechStackSection = () => {
   const cards = [
     {
       title: "The Brain",
-      subtitle: "Gemini 2.5 Flash",
+      subtitle: "Gemini 3 Flash (Classification)\nGemini 2.5 Pro (Reasoning)",
+      purpose: "Detect & Respond",
       description: "Lightning-fast scam detection and persona generation in under 200ms.",
       icon: Brain,
       className: "md:col-span-2 md:row-span-2",
@@ -776,6 +777,7 @@ const TechStackSection = () => {
     {
       title: "The Flow",
       subtitle: "One-Pass Architecture",
+      purpose: "Single Unified Inference",
       description: "Single inference for detection, persona selection, and response.",
       icon: Zap,
       className: "md:col-span-1",
@@ -784,6 +786,7 @@ const TechStackSection = () => {
     {
       title: "The Trap",
       subtitle: "Dynamic Personas",
+      purpose: "Believable Human Mimicry",
       description: "10+ pre-trained personas from confused grandma to tech-illiterate uncle.",
       icon: Drama,
       className: "md:col-span-1",
@@ -792,6 +795,7 @@ const TechStackSection = () => {
     {
       title: "The Intel",
       subtitle: "Real-time Extraction",
+      purpose: "Capture Scammer Data",
       description: "Auto-capture UPIs, phone numbers, and scammer fingerprints.",
       icon: Database,
       className: "md:col-span-2",
@@ -842,6 +846,11 @@ const TechStackSection = () => {
                   <h3 className="font-heading text-xl md:text-2xl font-bold text-white mb-2">
                     {card.subtitle}
                   </h3>
+                  {card.purpose && (
+                    <div className="text-sm font-semibold text-cyber-cyan mb-3">
+                      {card.purpose}
+                    </div>
+                  )}
                   <p className="text-gray-400 text-sm leading-relaxed mt-auto">
                     {card.description}
                   </p>
@@ -1113,7 +1122,7 @@ const LiveDemoSection = ({ onLiveDemo }) => {
           </p>
 
           <div className="flex items-center gap-6">
-            <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="text-gray-500 hover:text-white transition-colors">
+            <a href="https://github.com/codedbykishore/sticky-net" target="_blank" rel="noopener noreferrer" className="text-gray-500 hover:text-white transition-colors">
               <Github className="w-5 h-5" />
             </a>
             <a href="#" className="text-gray-500 hover:text-white transition-colors text-sm">

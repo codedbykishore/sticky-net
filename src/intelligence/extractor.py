@@ -39,6 +39,10 @@ BANK_ACCOUNT_SCAN_PATTERNS = [
     re.compile(r"\b\d{9,18}\b"),
     # Formatted with spaces/hyphens: XXXX-XXXX-XXXX-XXXX
     re.compile(r"\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{0,6}\b"),
+    # Hyphenated single digits: "1-2-3-4-5-6-7-8-9-0-1-2-3-4"
+    re.compile(r"\b\d(?:-\d){8,17}\b"),
+    # Spaced out digits: "1 2 3 4 5 6 7 8 9 0 1 2 3" (9-18 digits with spaces)
+    re.compile(r"\b(?:\d\s+){8,17}\d\b"),
     # Account number with prefix like "A/C" or "Account:"
     re.compile(r"(?:a/c|account|acc)[\s:]*#?\s*(\d{9,18})", re.IGNORECASE),
 ]
@@ -62,6 +66,8 @@ PHONE_SCAN_PATTERNS = [
     re.compile(r"\b[6-9]\d{2}[-\s]?\d{3}[-\s]?\d{4}\b"),
     # 91 followed by formatted 10 digits
     re.compile(r"\b91[-\s]?[6-9]\d{2}[-\s]?\d{3}[-\s]?\d{4}\b"),
+    # 91-XXXX-XXX-XXX format (hyphens between groups)
+    re.compile(r"\b91[-\s]\d{4}[-\s]\d{3}[-\s]\d{3}\b"),
 ]
 
 # URL Pattern (for scanning text)
@@ -72,11 +78,28 @@ URL_SCAN_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# URL without protocol pattern - catches bit.ly/xyz, domain.com/path, sbi-bank.pay.in/xyz
+URL_WITHOUT_PROTOCOL_PATTERN = re.compile(
+    r"\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}(?:\.[a-zA-Z]{2,})?(?:/[^\s<>\"'{}|\\^`\[\]]*)?",
+    re.IGNORECASE,
+)
+
 # Email Pattern (for scanning text)
 EMAIL_SCAN_PATTERN = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
 
 # IFSC Code Pattern (for scanning text)
+# Primary pattern: standalone IFSC codes
 IFSC_SCAN_PATTERN = re.compile(r"\b[A-Z]{4}0[A-Z0-9]{6}\b", re.IGNORECASE)
+
+# Additional IFSC patterns with context
+IFSC_WITH_LABEL_PATTERNS = [
+    # "IFSC: CODE" or "IFSC Code: CODE" or "ifsc code CODE" (don't capture the label 'code')
+    re.compile(r"(?:ifsc\s+code|ifsc\s+number|ifsc)[\s:]+([A-Z]{4}0[A-Z0-9]{6})\b", re.IGNORECASE),
+    # "code: CODE" or "code is CODE" (ensure we capture after the label)
+    re.compile(r"(?:bank\s+)?code(?:\s+is)?[\s:]+([A-Z]{4}0[A-Z0-9]{6})\b", re.IGNORECASE),
+    # Spaced out IFSC: "S B I N 0 0 0 1 2 3 4" (11 chars with spaces)
+    re.compile(r"(?:ifsc\s+code|ifsc|code)[\s:]+([A-Z](?:\s+[A-Z0-9]){10})\b", re.IGNORECASE),
+]
 
 # Bank Name Pattern (for scanning text)
 BANK_NAME_SCAN_PATTERN = re.compile(
@@ -85,30 +108,100 @@ BANK_NAME_SCAN_PATTERN = re.compile(
 )
 
 # Beneficiary Name Patterns (for scanning text)
+# Name pattern allows letters, dots, hyphens: "Ramesh.Kumar", "Suresh-Kumar", "joeljohn"
+# Made case-insensitive to capture lowercase names
+NAME_PATTERN = r"[A-Za-z][a-z]*(?:[.-]?[A-Za-z][a-z]*)*"
+
 BENEFICIARY_NAME_SCAN_PATTERNS = [
     # "name will show as 'Name'" or "name shows as Name"
     re.compile(
-        r"(?:name\s+(?:will\s+)?(?:show|display|appear)s?\s+(?:as)?[\s:]*['\"]?)([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})(?=['\"]|\s*[-–]|$|\.|,)",
+        rf"(?:name\s+(?:will\s+)?(?:show|display|appear)s?\s+(?:as)?[\s:]*['\"]?)({NAME_PATTERN}(?:\s+{NAME_PATTERN}){{0,2}})(?=['\"]|\s*[-–]|$|\.|,)",
         re.IGNORECASE,
     ),
     # "Account Holder: Name" or "A/C Holder Name: XYZ"
     re.compile(
-        r"(?:account\s+holder|a/c\s+holder|beneficiary|payee)[\s:]+(?:name)?[\s:]*['\"]?([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})(?=['\"]|\n|$|\.|,)",
+        rf"(?:account\s+holder|a/c\s+holder|beneficiary|payee)[\s:]+(?:name)?[\s:]*['\"]?({NAME_PATTERN}(?:\s+{NAME_PATTERN}){{0,2}})(?=['\"]|\n|$|\.|,)",
         re.IGNORECASE,
     ),
-    # "Transfer to Name" or "Send to Name"
+    # "Transfer to Name" or "Send to Name" or "Pay to Name" (flexible version)
     re.compile(
-        r"(?:transfer|send|pay)\s+(?:money\s+)?to\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})(?:\s*[-–]|\s+(?:sir|madam|ji|sahab))",
+        rf"(?:transfer|send|pay)\s+(?:money\s+|it\s+|amount\s+|rs\.?\s*\d+\s+)?(?:to|for)\s+({NAME_PATTERN}(?:\s+{NAME_PATTERN}){{0,2}})(?:\s*[-–.,]|\s+(?:sir|madam|ji|sahab|or)|$|\n)",
         re.IGNORECASE,
     ),
     # "Name - Title" pattern like "Rahul Kumar - KYC Support"
     re.compile(
-        r"['\"]([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})\s*[-–]\s*(?:KYC|Support|Officer|Manager|Executive|Agent|Verification)",
+        rf"['\"]({NAME_PATTERN}(?:\s+{NAME_PATTERN}){{0,2}})\s*[-–]\s*(?:KYC|Support|Officer|Manager|Executive|Agent|Verification)",
         re.IGNORECASE,
     ),
     # "or just 'Name'" pattern
     re.compile(
-        r"(?:or\s+)?just\s+['\"]([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})['\"]",
+        rf"(?:or\s+)?just\s+['\"]({NAME_PATTERN}(?:\s+{NAME_PATTERN}){{0,2}})['\"]",
+        re.IGNORECASE,
+    ),
+    # "name is Name" or "my name is Name" or "naam Name hai" (Hindi)
+    # Updated to better capture names immediately after "is"
+    re.compile(
+        rf"(?:my\s+)?(?:name|naam)\s+is\s+['\"]?({NAME_PATTERN}(?:\s+{NAME_PATTERN}){{0,2}})['\"]?(?:\s*[-–.,;]|$|\n|\s+(?:and|sir|madam|ji|from|please|pls))",
+        re.IGNORECASE,
+    ),
+    # "mera naam Name" (Hindi: "my name is Name")
+    re.compile(
+        rf"mera\s+naam\s+({NAME_PATTERN}(?:\s+{NAME_PATTERN}){{0,2}})",
+        re.IGNORECASE,
+    ),
+    # Alternative: "name Name" without "is" (for Hindi patterns)
+    re.compile(
+        rf"(?:my\s+)?naam\s+({NAME_PATTERN}(?:\s+{NAME_PATTERN}){{0,2}})\s+hai",
+        re.IGNORECASE,
+    ),
+    # "ka naam Name hai" pattern (Hindi: "his/her name is Name")
+    re.compile(
+        rf"(?:ka|ki)\s+naam\s+({NAME_PATTERN}(?:\s+{NAME_PATTERN}){{0,2}})\s+hai",
+        re.IGNORECASE,
+    ),
+    # "name: Name" (colon required, not "is")
+    re.compile(
+        rf"(?:^|[\s,])name:\s*['\"]?({NAME_PATTERN}(?:\s+{NAME_PATTERN}){{0,3}})['\"]?(?:\s*[-–.,]|$|\n|\s+(?:and|sir|madam|ji))",
+        re.IGNORECASE | re.MULTILINE,
+    ),
+    # "receiver: Name" or "receiver name: Name"
+    re.compile(
+        rf"(?:receiver|recipient)[\s:]+(?:name)?[\s:]*['\"]?({NAME_PATTERN}(?:\s+{NAME_PATTERN}){{0,3}})['\"]?(?=$|\n|\.|,)",
+        re.IGNORECASE,
+    ),
+    # "contact Name" or "call Name" (capturing only the name, not following words)
+    re.compile(
+        rf"(?:contact|call|reach|message)\s+(?:mr\.?\s+|mrs\.?\s+|ms\.?\s+)?({NAME_PATTERN}(?:\s+{NAME_PATTERN})?)(?=\s+(?:sir|madam|ji|on|at|via|for|my)|$|\n|\.|,)",
+        re.IGNORECASE,
+    ),
+    # "my associate Name" or "my colleague Name"
+    re.compile(
+        rf"(?:my|our)\s+(?:associate|colleague|partner|friend|representative)\s+({NAME_PATTERN}(?:\s+{NAME_PATTERN})?)(?=\s+(?:sir|madam|ji|phone|will|can)|$|\n|\.|,)",
+        re.IGNORECASE,
+    ),
+    # "this is Name" or "I am Name" patterns (capturing only the name)
+    re.compile(
+        rf"(?:this\s+is|i\s+am|i'm|myself)\s+({NAME_PATTERN})(?:\s+{NAME_PATTERN})?(?=\s+(?:from|here|speaking|sir|madam|ji|and)|$|\n|\.|,)",
+        re.IGNORECASE,
+    ),
+    # "Mr/Mrs/Shri Name" patterns
+    re.compile(
+        rf"(?:mr\.?|mrs\.?|ms\.?|shri|smt\.?|dr\.?)\s+({NAME_PATTERN}(?:\s+{NAME_PATTERN}){{0,2}})(?:\s+(?:sir|madam|ji)|$|\n|\.|,)",
+        re.IGNORECASE,
+    ),
+    # "- Name" or "– Name" at end of message (signature style)
+    re.compile(
+        rf"(?:^|\n)\s*[-–]\s*({NAME_PATTERN}(?:\s+{NAME_PATTERN}){{0,2}})\s*$",
+        re.MULTILINE,
+    ),
+    # "Regards, Name" or "Thanks, Name" or "From, Name"
+    re.compile(
+        rf"(?:regards|thanks|thank\s+you|from|sincerely|best)[,:\s]+({NAME_PATTERN}(?:\s+{NAME_PATTERN}){{0,2}})\s*$",
+        re.IGNORECASE | re.MULTILINE,
+    ),
+    # "colleague/friend/associate Name" patterns
+    re.compile(
+        rf"(?:colleague|friend|associate|partner|manager|supervisor|team\s+member)\s+({NAME_PATTERN}(?:\s+{NAME_PATTERN}){{0,2}})(?=\s+(?:at|who|will|can|is|se\b)|$|\n|\.|,)",
         re.IGNORECASE,
     ),
 ]
@@ -279,15 +372,26 @@ class IntelligenceExtractor:
     ) -> ExtractionResult:
         """
         Extract intelligence from a full conversation using regex.
+        
+        IMPORTANT: Only extracts from scammer messages, not honeypot agent messages.
 
         Args:
-            messages: List of message dicts with 'text' field
+            messages: List of message dicts with 'sender' and 'text' fields
 
         Returns:
             ExtractionResult with deduplicated entities
         """
-        # Combine all message texts
-        full_text = " ".join(msg.get("text", "") for msg in messages)
+        # Only extract from scammer messages, not honeypot agent messages
+        # Filter out messages from 'agent', 'honeypot', 'assistant', 'pushpa', 'system'
+        scammer_keywords = ["agent", "honeypot", "assistant", "pushpa", "system", "bot"]
+        
+        scammer_messages = [
+            msg for msg in messages
+            if msg.get("sender", "").lower() not in scammer_keywords
+        ]
+        
+        # Combine only scammer message texts
+        full_text = " ".join(msg.get("text", "") for msg in scammer_messages)
         return self.extract(full_text)
 
     def parse_ai_extraction(
@@ -429,25 +533,16 @@ class IntelligenceExtractor:
         return list(accounts)
 
     def _extract_upi_ids(self, text: str) -> list[str]:
-        """Extract UPI IDs."""
+        """Extract UPI IDs - ONLY from known UPI providers."""
         upi_ids = set()
 
-        # Known provider pattern - these are definitely UPI IDs
-        matches = UPI_KNOWN_PROVIDER_PATTERN.findall(text)
-        upi_ids.update(m.lower() for m in matches)
+        # Normalize spaces around @ to handle "name @ provider" format
+        normalized_text = re.sub(r'\s*@\s*', '@', text)
 
-        # Only use generic pattern if explicitly has "upi" keyword nearby
-        # This avoids false positives from email-like patterns
-        # Generic pattern (filter out emails)
-        generic_matches = UPI_GENERIC_SCAN_PATTERN.findall(text)
-        for match in generic_matches:
-            # Exclude if looks like email (has standard email TLD or common domain)
-            if self._looks_like_email(match):
-                continue
-            # Exclude if already captured by known provider pattern
-            if match.lower() in upi_ids:
-                continue
-            upi_ids.add(match.lower())
+        # ONLY use known provider pattern - strict matching to avoid false positives
+        # This prevents emails like "name@example.com" from being detected as UPI
+        matches = UPI_KNOWN_PROVIDER_PATTERN.findall(normalized_text)
+        upi_ids.update(m.lower() for m in matches)
 
         return list(upi_ids)
 
@@ -465,16 +560,47 @@ class IntelligenceExtractor:
         return list(phones)
 
     def _extract_urls(self, text: str) -> list[str]:
-        """Extract ALL URLs from scammer messages (no filtering in honeypot context)."""
+        """Extract URLs from scammer messages, excluding UPI/email fragments."""
         urls = set()
 
+        # Extract URLs with protocol (http/https)
         matches = URL_SCAN_PATTERN.findall(text)
         for url in matches:
             # Clean trailing punctuation
             clean_url = url.rstrip(".,;:!?)")
+            urls.add(clean_url)
+
+        # Extract URLs without protocol (bit.ly/xyz, sbi-bank.pay.in/abc)
+        protocol_less_matches = URL_WITHOUT_PROTOCOL_PATTERN.findall(text)
+        for url in protocol_less_matches:
+            # Clean trailing punctuation
+            clean_url = url.rstrip(".,;:!?)")
             
-            # In honeypot context, ANY URL from a scammer is intelligence
-            # No filtering needed - we already know it's a scam conversation
+            # Skip if already found with protocol
+            if any(clean_url in existing for existing in urls):
+                continue
+            
+            # Skip if it's part of a UPI ID or email (contains @ symbol in context)
+            # Check if this URL fragment is part of "something@domain" pattern
+            escaped_url = re.escape(clean_url)
+            if re.search(rf'\S+@{escaped_url}', text) or re.search(rf'{escaped_url}@\S+', text):
+                continue
+                
+            # Skip common false positives (file extensions, version numbers)
+            if clean_url.endswith(('.png', '.jpg', '.jpeg', '.gif', '.pdf', '.doc', '.txt')):
+                continue
+            if re.match(r'^v?\d+\.\d+', clean_url):  # version numbers like v1.2.3
+                continue
+            
+            # Skip single-word domains without path (likely email/UPI fragments)
+            # e.g., "example.com" without http:// or a path is suspicious
+            if not clean_url.startswith('http') and '/' not in clean_url and clean_url.count('.') <= 1:
+                # Check if it's an actual domain with suspicious keywords
+                suspicious_keywords = ['bank', 'pay', 'kyc', 'verify', 'update', 'secure', 'claim']
+                if not any(keyword in clean_url.lower() for keyword in suspicious_keywords):
+                    continue
+            
+            # In honeypot context, domain-looking URLs with paths are intelligence
             urls.add(clean_url)
 
         return list(urls)
@@ -528,12 +654,33 @@ class IntelligenceExtractor:
     def _extract_ifsc_codes(self, text: str) -> list[str]:
         """Extract IFSC codes."""
         ifsc_codes = set()
+        
+        # Word to number mapping for spelled out numbers
+        word_to_num = {
+            'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
+            'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9'
+        }
 
+        # Try primary pattern (standalone IFSC codes)
         matches = IFSC_SCAN_PATTERN.findall(text)
         for match in matches:
             clean_ifsc = str(match).strip().upper()
             if self._is_valid_ifsc(clean_ifsc):
                 ifsc_codes.add(clean_ifsc)
+        
+        # Try patterns with labels ("ifsc code XXXX")
+        for pattern in IFSC_WITH_LABEL_PATTERNS:
+            matches = pattern.findall(text)
+            for match in matches:
+                # Remove all spaces from the match (handles "H D F C 0 0 0 1 2 3 4")
+                clean_ifsc = str(match).replace(' ', '').strip().upper()
+                
+                # Convert spelled out numbers: "SBIN zero zero zero" -> "SBIN000"
+                for word, digit in word_to_num.items():
+                    clean_ifsc = re.sub(word, digit, clean_ifsc, flags=re.IGNORECASE)
+                
+                if self._is_valid_ifsc(clean_ifsc):
+                    ifsc_codes.add(clean_ifsc)
 
         return list(ifsc_codes)
 
@@ -551,8 +698,8 @@ class IntelligenceExtractor:
         return list(whatsapp_nums)
 
     def _clean_number(self, number: str) -> str:
-        """Remove formatting from numbers."""
-        return re.sub(r"[-\s]", "", number)
+        """Remove formatting from numbers (spaces, hyphens, parentheses, dots)."""
+        return re.sub(r"[-\s().+]", "", number)
 
     def _is_valid_bank_account(self, number: str) -> bool:
         """Validate bank account number."""

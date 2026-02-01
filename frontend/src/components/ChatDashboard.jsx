@@ -2,8 +2,8 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     Send, RotateCcw, Bug, ArrowLeft, Copy,
-    AlertTriangle, Shield, Clock, MessageSquare, Zap, Plus,
-    Trash2, History, CheckCircle
+    AlertTriangle, Shield, MessageSquare, Zap, Plus,
+    Trash2, History, CheckCircle, CreditCard, Phone, Mail, Link2, Building2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -57,7 +57,6 @@ const sampleConversations = [
             scamDetected: true,
             confidence: 0.97,
             messagesExchanged: 4,
-            duration: 240,
         }
     },
     {
@@ -83,7 +82,6 @@ const sampleConversations = [
             scamDetected: true,
             confidence: 0.99,
             messagesExchanged: 5,
-            duration: 600,
         }
     },
     {
@@ -108,7 +106,6 @@ const sampleConversations = [
             scamDetected: true,
             confidence: 0.94,
             messagesExchanged: 4,
-            duration: 420,
         }
     }
 ];
@@ -163,12 +160,8 @@ const GlassPanel = ({ children, className = "", glowOnHover = true }) => (
 );
 
 // ============ CHAT MESSAGE ============
-const ChatMessage = ({ message, isAgent }) => (
-    <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className={`flex ${isAgent ? 'justify-end' : 'justify-start'} mb-4`}
-    >
+const ChatMessage = React.memo(({ message, isAgent }) => (
+    <div className={`flex ${isAgent ? 'justify-end' : 'justify-start'} mb-4`}>
         <div
             className={`
         max-w-[80%] px-4 py-3 rounded-2xl font-mono text-sm
@@ -178,16 +171,13 @@ const ChatMessage = ({ message, isAgent }) => (
                 }
       `}
         >
-            <p className="leading-relaxed">{message.text}</p>
-            <span className="text-[10px] text-gray-500 mt-2 block text-right">
-                {message.timestamp}
-            </span>
+            <p className="leading-relaxed whitespace-pre-wrap">{message.text}</p>
         </div>
-    </motion.div>
-);
+    </div>
+));
 
 // ============ METRIC CARD ============
-const MetricCard = ({ label, value, icon: Icon, color = "cyan" }) => {
+const MetricCard = React.memo(({ label, value, icon: Icon, color = "cyan" }) => {
     const colorClasses = {
         cyan: "text-cyber-cyan border-cyber-cyan/30",
         red: "text-cyber-red border-cyber-red/30",
@@ -206,46 +196,80 @@ const MetricCard = ({ label, value, icon: Icon, color = "cyan" }) => {
             </span>
         </div>
     );
-};
+});
 
 // ============ INTEL TAG ============
-const IntelTag = ({ type, value }) => {
+const IntelTag = React.memo(({ type, value }) => {
     const typeConfig = {
-        upi: { icon: "💳", color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" },
-        link: { icon: "🔗", color: "bg-red-500/20 text-red-400 border-red-500/30" },
-        phone: { icon: "📞", color: "bg-purple-500/20 text-purple-400 border-purple-500/30" },
-        bank: { icon: "🏦", color: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
-        email: { icon: "📧", color: "bg-green-500/20 text-green-400 border-green-500/30" },
+        upi: { 
+            icon: CreditCard, 
+            label: "UPI ID",
+            color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" 
+        },
+        link: { 
+            icon: Link2, 
+            label: "Link",
+            color: "bg-red-500/20 text-red-400 border-red-500/30" 
+        },
+        phone: { 
+            icon: Phone, 
+            label: "Phone",
+            color: "bg-purple-500/20 text-purple-400 border-purple-500/30" 
+        },
+        bank: { 
+            icon: Building2, 
+            label: "Bank A/C",
+            color: "bg-blue-500/20 text-blue-400 border-blue-500/30" 
+        },
+        email: { 
+            icon: Mail, 
+            label: "Email",
+            color: "bg-green-500/20 text-green-400 border-green-500/30" 
+        },
+        name: { 
+            icon: Building2, 
+            label: "Name",
+            color: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30" 
+        },
+        ifsc: { 
+            icon: Building2, 
+            label: "IFSC",
+            color: "bg-indigo-500/20 text-indigo-400 border-indigo-500/30" 
+        },
+        whatsapp: { 
+            icon: Phone, 
+            label: "WhatsApp",
+            color: "bg-pink-500/20 text-pink-400 border-pink-500/30" 
+        },
     };
 
     const config = typeConfig[type] || typeConfig.upi;
+    const IconComponent = config.icon;
 
     const handleCopy = () => {
         navigator.clipboard.writeText(value);
     };
 
     return (
-        <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
+        <div
             className={`
         flex items-center gap-2 px-3 py-2 rounded-lg border font-mono text-xs
         ${config.color}
       `}
         >
-            <span>{config.icon}</span>
-            <span className="truncate max-w-[180px]">{value}</span>
-            <button onClick={handleCopy} className="ml-auto hover:opacity-70 transition-opacity">
+            <IconComponent className="w-4 h-4 flex-shrink-0" />
+            <span className="font-semibold flex-shrink-0">{config.label}:</span>
+            <span className="truncate flex-1">{value}</span>
+            <button onClick={handleCopy} className="ml-auto hover:opacity-70 transition-opacity flex-shrink-0">
                 <Copy className="w-3 h-3" />
             </button>
-        </motion.div>
+        </div>
     );
-};
+});
 
 // ============ CONVERSATION CARD ============
-const ConversationCard = ({ conversation, onClick, isActive, onDelete }) => (
-    <motion.div
-        whileHover={{ scale: 1.02 }}
+const ConversationCard = React.memo(({ conversation, onClick, isActive, onDelete }) => (
+    <div
         className={`
       w-full text-left p-4 rounded-xl border transition-all duration-300 relative group
       ${isActive
@@ -285,8 +309,8 @@ const ConversationCard = ({ conversation, onClick, isActive, onDelete }) => (
                 <Trash2 className="w-3 h-3 text-red-400" />
             </button>
         )}
-    </motion.div>
-);
+    </div>
+));
 
 // ============ MAIN CHAT DASHBOARD ============
 const ChatDashboard = () => {
@@ -296,14 +320,12 @@ const ChatDashboard = () => {
     const [messages, setMessages] = useState([]);
     const [inputValue, setInputValue] = useState("");
     const [isLoading, setIsLoading] = useState(false);
-    const [apiKey, setApiKey] = useState("");
     const [channel, setChannel] = useState("SMS");
     const [locale, setLocale] = useState("IN");
     const [metrics, setMetrics] = useState({
         scamDetected: null,
         confidence: null,
         messagesExchanged: 0,
-        duration: 0,
     });
     const [extractedIntel, setExtractedIntel] = useState({
         upiIds: [],
@@ -311,12 +333,15 @@ const ChatDashboard = () => {
         bankAccounts: [],
         phoneNumbers: [],
         emails: [],
+        beneficiaryNames: [],
+        ifscCodes: [],
+        whatsappNumbers: [],
     });
     const [agentNotes, setAgentNotes] = useState("");
-    const [startTime, setStartTime] = useState(null);
     const [connectionStatus, setConnectionStatus] = useState('unknown'); // 'connected', 'disconnected', 'unknown'
 
     const messagesEndRef = useRef(null);
+    const messagesContainerRef = useRef(null);
     const inputRef = useRef(null);
 
     // Load saved conversations on mount
@@ -325,24 +350,12 @@ const ChatDashboard = () => {
         setSavedConversations(loaded);
     }, []);
 
-    // Auto-scroll to bottom
+    // Auto-scroll to bottom when new messages arrive
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, [messages]);
-
-    // Timer for duration
-    useEffect(() => {
-        if (!startTime || metrics.scamDetected === false) return;
-
-        const timer = setInterval(() => {
-            setMetrics(prev => ({
-                ...prev,
-                duration: Math.floor((Date.now() - startTime) / 1000)
-            }));
-        }, 1000);
-
-        return () => clearInterval(timer);
-    }, [startTime, metrics.scamDetected]);
+        if (messages.length > 0 && messagesEndRef.current) {
+            messagesEndRef.current.scrollIntoView({ behavior: "auto" });
+        }
+    }, [messages.length]);
 
     // Save current conversation to localStorage whenever it changes
     const saveCurrentConversation = useCallback(() => {
@@ -394,13 +407,14 @@ const ChatDashboard = () => {
     }, []);
 
     const handleSelectConversation = (conversation) => {
-        setCurrentConversationId(conversation.id);
+        // For sample conversations, create a read-only view (new ID to prevent saving)
+        const isReadOnly = conversation.isSample;
+        setCurrentConversationId(isReadOnly ? null : conversation.id);
         setMessages(conversation.messages || []);
         setMetrics(conversation.metrics || {
             scamDetected: null,
             confidence: null,
             messagesExchanged: conversation.messages?.length || 0,
-            duration: 0,
         });
         setExtractedIntel(conversation.extractedIntel || {
             upiIds: [],
@@ -431,7 +445,6 @@ const ChatDashboard = () => {
             scamDetected: null,
             confidence: null,
             messagesExchanged: 0,
-            duration: 0,
         });
         setExtractedIntel({
             upiIds: [],
@@ -441,16 +454,31 @@ const ChatDashboard = () => {
             emails: [],
         });
         setAgentNotes("");
-        setStartTime(null);
         inputRef.current?.focus();
     };
 
     const handleSend = async () => {
         if (!inputValue.trim() || isLoading) return;
 
-        // Create new conversation if none exists
-        if (!currentConversationId) {
-            setCurrentConversationId(generateId());
+        // If viewing a sample, create a new conversation first
+        const activeConversation = allConversations.find(c => c.id === currentConversationId);
+        if (activeConversation?.isSample || !currentConversationId) {
+            const newId = generateId();
+            setCurrentConversationId(newId);
+            setMessages([]);
+            setMetrics({
+                scamDetected: null,
+                confidence: null,
+                messagesExchanged: 0,
+            });
+            setExtractedIntel({
+                upiIds: [],
+                phishingLinks: [],
+                bankAccounts: [],
+                phoneNumbers: [],
+                emails: [],
+            });
+            setAgentNotes("");
         }
 
         const timestamp = new Date().toISOString();
@@ -467,10 +495,6 @@ const ChatDashboard = () => {
         setInputValue("");
         setIsLoading(true);
 
-        if (!startTime) {
-            setStartTime(Date.now());
-        }
-
         try {
             // Build conversation history for API
             const conversationHistory = messages.map(m => ({
@@ -483,7 +507,6 @@ const ChatDashboard = () => {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    ...(apiKey && { 'X-API-Key': apiKey }),
                 },
                 body: JSON.stringify({
                     message: {
@@ -524,7 +547,6 @@ const ChatDashboard = () => {
                     scamDetected: data.scamDetected,
                     confidence: data.confidence || prev.confidence,
                     messagesExchanged: prev.messagesExchanged + (data.agentResponse ? 2 : 1),
-                    duration: prev.duration,
                 }));
 
                 // Update intel from response
@@ -536,6 +558,9 @@ const ChatDashboard = () => {
                         bankAccounts: [...new Set([...prev.bankAccounts, ...(intel.bankAccounts || [])])],
                         phoneNumbers: [...new Set([...prev.phoneNumbers, ...(intel.phoneNumbers || [])])],
                         emails: [...new Set([...(prev.emails || []), ...(intel.emails || [])])],
+                        beneficiaryNames: [...new Set([...(prev.beneficiaryNames || []), ...(intel.beneficiaryNames || [])])],
+                        ifscCodes: [...new Set([...(prev.ifscCodes || []), ...(intel.ifscCodes || [])])],
+                        whatsappNumbers: [...new Set([...(prev.whatsappNumbers || []), ...(intel.whatsappNumbers || [])])],
                     }));
                 }
 
@@ -558,23 +583,23 @@ const ChatDashboard = () => {
         handleNewConversation();
     };
 
-    const formatDuration = (seconds) => {
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins}m ${secs}s`;
-    };
-
     const hasIntel = extractedIntel.upiIds.length > 0 ||
         extractedIntel.phishingLinks.length > 0 ||
         extractedIntel.bankAccounts.length > 0 ||
         extractedIntel.phoneNumbers?.length > 0 ||
-        extractedIntel.emails?.length > 0;
+        extractedIntel.emails?.length > 0 ||
+        extractedIntel.beneficiaryNames?.length > 0 ||
+        extractedIntel.ifscCodes?.length > 0 ||
+        extractedIntel.whatsappNumbers?.length > 0;
 
     // Combine samples and saved conversations
     const allConversations = [...sampleConversations, ...savedConversations];
+    
+    // Check if viewing a sample conversation
+    const isViewingSample = !currentConversationId && messages.length > 0;
 
     return (
-        <div className="min-h-screen bg-obsidian relative overflow-hidden">
+        <div className="h-screen bg-obsidian relative overflow-hidden flex flex-col">
             <WebPattern />
 
             {/* Header */}
@@ -614,13 +639,13 @@ const ChatDashboard = () => {
             </header>
 
             {/* Main Content */}
-            <main className="pt-20 pb-8 px-6 min-h-screen">
-                <div className="max-w-[1800px] mx-auto grid grid-cols-12 gap-6 h-[calc(100vh-120px)]">
+            <main className="flex-1 pt-20 px-4 md:px-6 pb-4 overflow-hidden">
+                <div className="max-w-[1800px] mx-auto h-full grid grid-cols-12 gap-4 md:gap-6">
 
                     {/* Conversations Sidebar */}
-                    <div className="col-span-12 lg:col-span-2">
-                        <GlassPanel className="h-full p-4 overflow-hidden flex flex-col">
-                            <div className="flex items-center justify-between mb-4">
+                    <div className="col-span-12 lg:col-span-2 h-full min-h-0">
+                        <GlassPanel className="h-full p-4 flex flex-col min-h-0">
+                            <div className="flex items-center justify-between mb-4 flex-shrink-0">
                                 <h3 className="text-white font-semibold flex items-center gap-2">
                                     <History className="w-4 h-4 text-cyber-cyan" />
                                     Conversations
@@ -635,9 +660,10 @@ const ChatDashboard = () => {
                                 </Button>
                             </div>
 
-                            <div className="space-y-3 overflow-y-auto flex-1 pr-1 scrollbar-thin">
-                                {/* Sample Conversations */}
-                                <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Examples</div>
+                            <div className="flex-1 min-h-0 overflow-y-auto pr-1" style={{ scrollbarWidth: 'thin' }}>
+                                <div className="space-y-3">
+                                    {/* Sample Conversations */}
+                                    <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Examples</div>
                                 {sampleConversations.map((conv) => (
                                     <ConversationCard
                                         key={conv.id}
@@ -662,21 +688,27 @@ const ChatDashboard = () => {
                                         ))}
                                     </>
                                 )}
+                                </div>
                             </div>
                         </GlassPanel>
                     </div>
 
                     {/* Chat Window */}
-                    <div className="col-span-12 lg:col-span-6">
-                        <GlassPanel className="h-full flex flex-col overflow-hidden">
+                    <div className="col-span-12 lg:col-span-6 h-full min-h-0">
+                        <GlassPanel className="h-full flex flex-col min-h-0">
                             {/* Chat Header */}
-                            <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+                            <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between flex-shrink-0">
                                 <div className="flex items-center gap-3">
                                     <div className={`w-3 h-3 rounded-full ${isLoading ? 'bg-yellow-400 animate-pulse' : 'bg-cyber-cyan'}`} />
                                     <h2 className="text-white font-semibold">Conversation</h2>
                                     <Badge variant="outline" className="text-gray-400 border-gray-600 text-xs">
                                         {isLoading ? 'PROCESSING' : 'MONITORING'}
                                     </Badge>
+                                    {!currentConversationId && messages.length > 0 && (
+                                        <Badge variant="outline" className="text-yellow-400 border-yellow-400/30 bg-yellow-400/5 text-xs">
+                                            DEMO - READ ONLY
+                                        </Badge>
+                                    )}
                                 </div>
                                 <Button
                                     size="sm"
@@ -690,7 +722,11 @@ const ChatDashboard = () => {
                             </div>
 
                             {/* Messages Area */}
-                            <div className="flex-1 overflow-y-auto p-6 scrollbar-thin">
+                            <div 
+                                ref={messagesContainerRef}
+                                className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 md:p-6"
+                                style={{ scrollbarWidth: 'thin' }}
+                            >
                                 {messages.length === 0 ? (
                                     <div className="h-full flex flex-col items-center justify-center text-gray-500">
                                         <MessageSquare className="w-16 h-16 mb-4 opacity-30" />
@@ -707,15 +743,15 @@ const ChatDashboard = () => {
                                         )}
                                     </div>
                                 ) : (
-                                    <AnimatePresence>
+                                    <>
                                         {messages.map((msg, idx) => (
                                             <ChatMessage
-                                                key={idx}
+                                                key={`msg-${idx}`}
                                                 message={msg}
                                                 isAgent={msg.sender === "agent"}
                                             />
                                         ))}
-                                    </AnimatePresence>
+                                    </>
                                 )}
                                 {isLoading && (
                                     <div className="flex justify-end mb-4">
@@ -732,43 +768,77 @@ const ChatDashboard = () => {
                             </div>
 
                             {/* Input Area */}
-                            <div className="p-4 border-t border-white/10">
-                                <div className="flex gap-3">
-                                    <input
-                                        ref={inputRef}
-                                        type="text"
-                                        value={inputValue}
-                                        onChange={(e) => setInputValue(e.target.value)}
-                                        onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                                        placeholder="Type scammer message..."
-                                        className="
+                            <div className="p-4 border-t border-white/10 flex-shrink-0">
+                                {isViewingSample ? (
+                                    <div className="text-center py-4">
+                                        <p className="text-gray-500 text-sm font-mono">
+                                            📖 This is a demo example. Click "New" to start your own conversation.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="flex gap-3 items-end">
+                                        <textarea
+                                            ref={inputRef}
+                                            value={inputValue}
+                                            onChange={(e) => setInputValue(e.target.value)}
+                                            onPaste={(e) => {
+                                                // Let default paste behavior work, then trigger resize
+                                                setTimeout(() => {
+                                                    if (inputRef.current) {
+                                                        inputRef.current.style.height = 'auto';
+                                                        inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 200) + 'px';
+                                                    }
+                                                }, 0);
+                                            }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' && !e.shiftKey) {
+                                                    e.preventDefault();
+                                                    handleSend();
+                                                }
+                                            }}
+                                            placeholder="Type scammer message... (Shift+Enter for new line)"
+                                            rows={3}
+                                            className="
                       flex-1 bg-black border border-white/20 rounded-xl px-4 py-3
                       font-mono text-sm text-gray-200 placeholder:text-gray-600
                       focus:outline-none focus:border-cyber-cyan focus:shadow-cyan-glow
-                      transition-all duration-300
+                      transition-all duration-300 resize-none overflow-y-auto scrollbar-thin
+                      min-h-[80px] max-h-[200px]
                     "
-                                    />
-                                    <Button
-                                        onClick={handleSend}
-                                        disabled={isLoading || !inputValue.trim()}
-                                        className="
+                                            style={{
+                                                height: 'auto',
+                                                lineHeight: '1.5rem',
+                                                whiteSpace: 'pre-wrap',
+                                                wordWrap: 'break-word',
+                                                overflowWrap: 'break-word'
+                                            }}
+                                            onInput={(e) => {
+                                                e.target.style.height = 'auto';
+                                                e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px';
+                                            }}
+                                        />
+                                        <Button
+                                            onClick={handleSend}
+                                            disabled={isLoading || !inputValue.trim()}
+                                            className="
                       bg-cyber-cyan text-black font-mono font-bold px-6
                       hover:bg-cyber-cyan/80 disabled:opacity-50
-                      shadow-cyan-glow transition-all duration-300
+                      shadow-cyan-glow transition-all duration-300 h-[44px]
                     "
-                                    >
-                                        <Send className="w-4 h-4 mr-2" />
-                                        Send
-                                    </Button>
-                                </div>
+                                        >
+                                            <Send className="w-4 h-4 mr-2" />
+                                            Send
+                                        </Button>
+                                    </div>
+                                )}
                             </div>
                         </GlassPanel>
                     </div>
 
                     {/* Right Sidebar - Metrics & Intel */}
-                    <div className="col-span-12 lg:col-span-4 flex flex-col gap-6">
+                    <div className="col-span-12 lg:col-span-4 h-full min-h-0 flex flex-col gap-4 md:gap-6">
                         {/* Configuration */}
-                        <GlassPanel className="p-5">
+                        <GlassPanel className="p-5 flex-shrink-0">
                             <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
                                 <Shield className="w-4 h-4 text-gray-400" />
                                 Configuration
@@ -799,20 +869,10 @@ const ChatDashboard = () => {
                                     </select>
                                 </div>
                             </div>
-                            <div>
-                                <label className="text-gray-500 text-xs mb-1 block">API KEY (optional)</label>
-                                <input
-                                    type="password"
-                                    value={apiKey}
-                                    onChange={(e) => setApiKey(e.target.value)}
-                                    placeholder="Enter API key..."
-                                    className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-cyber-cyan placeholder:text-gray-600"
-                                />
-                            </div>
                         </GlassPanel>
 
                         {/* Detection Metrics */}
-                        <GlassPanel className="p-5">
+                        <GlassPanel className="p-5 flex-shrink-0">
                             <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
                                 <AlertTriangle className="w-4 h-4 text-cyber-red" />
                                 Detection Metrics
@@ -830,11 +890,9 @@ const ChatDashboard = () => {
                                     color={metrics.confidence > 0.8 ? "red" : metrics.confidence > 0.5 ? "yellow" : "green"}
                                 />
                                 <div className="h-2 bg-white/5 rounded-full overflow-hidden mt-2 mb-3">
-                                    <motion.div
-                                        className={`h-full ${metrics.confidence > 0.8 ? 'bg-cyber-red' : metrics.confidence > 0.5 ? 'bg-yellow-400' : 'bg-green-400'}`}
-                                        initial={{ width: 0 }}
-                                        animate={{ width: `${(metrics.confidence || 0) * 100}%` }}
-                                        transition={{ duration: 0.5 }}
+                                    <div
+                                        className={`h-full transition-all duration-500 ease-out ${metrics.confidence > 0.8 ? 'bg-cyber-red' : metrics.confidence > 0.5 ? 'bg-yellow-400' : 'bg-green-400'}`}
+                                        style={{ width: `${(metrics.confidence || 0) * 100}%` }}
                                     />
                                 </div>
                                 <MetricCard
@@ -843,28 +901,22 @@ const ChatDashboard = () => {
                                     icon={MessageSquare}
                                     color="cyan"
                                 />
-                                <MetricCard
-                                    label="Duration"
-                                    value={formatDuration(metrics.duration)}
-                                    icon={Clock}
-                                    color="cyan"
-                                />
                             </div>
                         </GlassPanel>
 
                         {/* Extracted Intelligence */}
-                        <GlassPanel className="p-5 flex-1 overflow-hidden flex flex-col">
-                            <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
+                        <GlassPanel className="p-5 flex-1 min-h-0 overflow-hidden flex flex-col">
+                            <h3 className="text-white font-semibold mb-4 flex items-center gap-2 flex-shrink-0">
                                 <Zap className="w-4 h-4 text-yellow-400" />
                                 Extracted Intelligence
                             </h3>
-                            <div className="flex-1 overflow-y-auto scrollbar-thin">
+                            <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin space-y-2 pr-2">
                                 {!hasIntel ? (
                                     <div className="h-full flex items-center justify-center text-gray-600 text-sm font-mono">
                                         No intelligence extracted yet.
                                     </div>
                                 ) : (
-                                    <div className="space-y-2">
+                                    <>
                                         {extractedIntel.upiIds.map((upi, idx) => (
                                             <IntelTag key={`upi-${idx}`} type="upi" value={upi} />
                                         ))}
@@ -880,13 +932,22 @@ const ChatDashboard = () => {
                                         {extractedIntel.emails?.map((email, idx) => (
                                             <IntelTag key={`email-${idx}`} type="email" value={email} />
                                         ))}
-                                    </div>
+                                        {extractedIntel.beneficiaryNames?.map((name, idx) => (
+                                            <IntelTag key={`name-${idx}`} type="name" value={name} />
+                                        ))}
+                                        {extractedIntel.ifscCodes?.map((ifsc, idx) => (
+                                            <IntelTag key={`ifsc-${idx}`} type="ifsc" value={ifsc} />
+                                        ))}
+                                        {extractedIntel.whatsappNumbers?.map((wa, idx) => (
+                                            <IntelTag key={`whatsapp-${idx}`} type="whatsapp" value={wa} />
+                                        ))}
+                                    </>
                                 )}
                             </div>
                         </GlassPanel>
 
                         {/* Agent Notes */}
-                        <GlassPanel className="p-5">
+                        <GlassPanel className="p-5 flex-shrink-0">
                             <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
                                 📝 Agent Notes
                             </h3>
