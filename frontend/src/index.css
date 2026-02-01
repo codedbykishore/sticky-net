@@ -47,6 +47,8 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
+  scrollbar-color: rgba(0, 245, 212, 0.3) #0A0A0B;
+  scrollbar-width: thin;
 }
 
 /* ============ SCROLL SNAP CONTAINER ============ */
@@ -55,6 +57,8 @@ body {
   overflow-y: scroll;
   scroll-snap-type: y mandatory;
   scroll-behavior: smooth;
+  scrollbar-color: rgba(0, 245, 212, 0.3) #0A0A0B;
+  scrollbar-width: thin;
 }
 
 /* Hide scrollbar but keep functionality */
@@ -175,12 +179,12 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #27272A;
+  background: rgba(0, 245, 212, 0.3);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #00F5D4;
+  background: rgba(0, 245, 212, 0.6);
 }
 
 /* Cyber Glow Effects */

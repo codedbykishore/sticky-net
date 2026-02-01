@@ -234,8 +234,8 @@ class HoneypotAgent:
         should_continue = self.policy.should_continue(state)
         exit_reason = self.policy.get_exit_reason(state) if not should_continue else None
 
-        # Generate notes with actual turn number
-        notes = self._generate_notes(detection, persona, engagement_mode, actual_turn)
+        # Generate notes with actual turn number (intelligence will be added in routes.py after merging)
+        notes = self._generate_notes(detection, persona, engagement_mode, actual_turn, extracted_intel=None)
 
         return EngagementResult(
             response=response,
@@ -547,6 +547,7 @@ Generate your response as Pushpa Verma:"""
         persona: Persona,
         mode: EngagementMode,
         turn_number: int,
+        extracted_intel: ExtractedIntelligence | None = None,
     ) -> str:
         """Generate agent notes summarizing the engagement."""
         notes_parts = []
@@ -566,6 +567,31 @@ Generate your response as Pushpa Verma:"""
 
         # Emotional state
         notes_parts.append(f"Persona: {persona.emotional_state.value}")
+        
+        # Add intelligence extraction counts (only from scammer messages)
+        if extracted_intel:
+            intel_counts = []
+            if extracted_intel.bankAccounts:
+                intel_counts.append(f"{len(extracted_intel.bankAccounts)} Bank Account(s)")
+            if extracted_intel.upiIds:
+                intel_counts.append(f"{len(extracted_intel.upiIds)} UPI ID(s)")
+            if extracted_intel.phoneNumbers:
+                intel_counts.append(f"{len(extracted_intel.phoneNumbers)} Phone(s)")
+            if extracted_intel.phishingLinks:
+                intel_counts.append(f"{len(extracted_intel.phishingLinks)} URL(s)")
+            if extracted_intel.emails:
+                intel_counts.append(f"{len(extracted_intel.emails)} Email(s)")
+            if extracted_intel.ifscCodes:
+                intel_counts.append(f"{len(extracted_intel.ifscCodes)} IFSC Code(s)")
+            if extracted_intel.whatsappNumbers:
+                intel_counts.append(f"{len(extracted_intel.whatsappNumbers)} WhatsApp(s)")
+            if extracted_intel.beneficiaryNames:
+                intel_counts.append(f"{len(extracted_intel.beneficiaryNames)} Name(s)")
+            if extracted_intel.other_critical_info:
+                intel_counts.append(f"{len(extracted_intel.other_critical_info)} Other Intel")
+            
+            if intel_counts:
+                notes_parts.append(f"Extracted: {', '.join(intel_counts)}")
 
         return " | ".join(notes_parts)
     

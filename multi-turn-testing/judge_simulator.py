@@ -348,12 +348,19 @@ class JudgeSimulator:
         scenarios_dir = os.path.join(os.path.dirname(__file__), "scenarios-2")
 
         if scenario_path:
-            # Run single scenario
+            # Make path absolute if relative
             if not os.path.isabs(scenario_path):
                 scenario_path = os.path.join(os.path.dirname(__file__), scenario_path)
-            scenarios = [(scenario_path, self.load_scenario(scenario_path))]
+            
+            # Check if it's a directory or file
+            if os.path.isdir(scenario_path):
+                # Run all scenarios in the directory
+                scenarios = self.load_all_scenarios(scenario_path)
+            else:
+                # Run single scenario file
+                scenarios = [(scenario_path, self.load_scenario(scenario_path))]
         else:
-            # Run all scenarios
+            # Run all scenarios from default directory
             scenarios = self.load_all_scenarios(scenarios_dir)
 
         if not scenarios:
