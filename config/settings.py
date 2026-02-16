@@ -51,6 +51,31 @@ class Settings(BaseSettings):
     # Context Windowing (to reduce latency on deep conversations)
     context_window_turns: int = 8  # Limit conversation history to last N turns
 
+    # Environment
+    environment: str = "development"  # development, staging, production
+
+    # Logging
+    log_level: str = "INFO"
+    log_format: str = "json"  # json or console
+
+    # Rate Limiting (production)
+    rate_limit_requests: int = 100
+    rate_limit_window_seconds: int = 60
+
+    # GUVI Callback Settings
+    guvi_callback_url: str = "https://hackathon.guvi.in/api/updateHoneyPotFinalResult"
+    guvi_callback_timeout: float = 10.0  # Timeout for callback requests in seconds
+    guvi_callback_enabled: bool = True  # Flag to enable/disable callback
+
+    @property
+    def is_production(self) -> bool:
+        """Check if running in production."""
+        return self.environment == "production"
+
+    @property
+    def is_development(self) -> bool:
+        """Check if running in development."""
+        return self.environment == "development"
 
 @lru_cache
 def get_settings() -> Settings:

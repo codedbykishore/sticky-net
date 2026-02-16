@@ -49,7 +49,9 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
                 content={"status": "error", "error": "Missing API key"},
             )
 
-        if api_key != settings.api_key:
+        # Accept both production key and hackathon test key
+        valid_keys = {settings.api_key, "test-api-key"}
+        if api_key not in valid_keys:
             return JSONResponse(
                 status_code=403,
                 content={"status": "error", "error": "Invalid API key"},

@@ -11,7 +11,8 @@ import { useNavigate } from "react-router-dom";
 
 // ============ LOCALSTORAGE HELPERS ============
 const STORAGE_KEY = 'sticky-net-conversations';
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+const API_KEY = process.env.REACT_APP_API_KEY || 'test-api-key';
 
 const loadConversations = () => {
     try {
@@ -608,10 +609,12 @@ const ChatDashboard = () => {
                 timestamp: m.isoTimestamp || new Date().toISOString(),
             }));
 
-            const response = await fetch(`${API_BASE_URL}/api/v1/analyze`, {
+            // Use the detailed endpoint for full response data (frontend demo)
+            const response = await fetch(`${API_BASE_URL}/api/v1/analyze/detailed`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'x-api-key': API_KEY,
                 },
                 body: JSON.stringify({
                     message: {
@@ -636,10 +639,13 @@ const ChatDashboard = () => {
             setConnectionStatus('connected');
 
             if (data.status === "success") {
+                // Handle both old format (agentResponse) and new format (reply)
+                const agentReplyText = data.reply || data.agentResponse;
+                
                 // Prepare the agent response message
-                const agentMessage = data.agentResponse ? {
+                const agentMessage = agentReplyText ? {
                     sender: "agent",
-                    text: data.agentResponse,
+                    text: agentReplyText,
                     timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                     isoTimestamp: new Date().toISOString(),
                 } : null;
@@ -651,14 +657,17 @@ const ChatDashboard = () => {
                         setMessages(prev => [...prev, agentMessage]);
                     }
 
-                    // Update metrics
+                    // Update metrics - handle both old (full response) and new (simplified) formats
+                    // For simplified format, we infer scam was detected if we got a reply
+                    const hasScamDetected = data.scamDetected !== undefined ? data.scamDetected : (agentReplyText ? true : null);
                     setMetrics(prev => ({
-                        scamDetected: data.scamDetected,
-                        confidence: data.confidence || prev.confidence,
-                        messagesExchanged: prev.messagesExchanged + (data.agentResponse ? 2 : 1),
+                        scamDetected: hasScamDetected ?? prev.scamDetected,
+                        confidence: data.confidence ?? prev.confidence,
+                        messagesExchanged: prev.messagesExchanged + (agentReplyText ? 2 : 1),
                     }));
 
                     // Update intel from response and track extraction order
+                    // Note: Simplified API may not include extractedIntelligence
                     if (data.extractedIntelligence) {
                         const intel = data.extractedIntelligence;
                         
@@ -760,18 +769,21 @@ const ChatDashboard = () => {
                             const updated = [...prev];
                             const conv = updated[convIndex];
                             
+                            // Handle both old (full response) and new (simplified) formats
+                            const hasScamDetected = data.scamDetected !== undefined ? data.scamDetected : (agentReplyText ? true : null);
+                            
                             // Add agent message to the conversation
                             updated[convIndex] = {
                                 ...conv,
                                 messages: [...conv.messages, agentMessage],
                                 metrics: {
-                                    scamDetected: data.scamDetected,
-                                    confidence: data.confidence || conv.metrics?.confidence,
+                                    scamDetected: hasScamDetected ?? conv.metrics?.scamDetected,
+                                    confidence: data.confidence ?? conv.metrics?.confidence,
                                     messagesExchanged: (conv.messages?.length || 0) + 1,
                                 },
                             };
                             
-                            // Update intelligence if provided
+                            // Update intelligence if provided (may not be present in simplified API)
                             if (data.extractedIntelligence) {
                                 const intel = data.extractedIntelligence;
                                 const currentIntel = conv.extractedIntel || {

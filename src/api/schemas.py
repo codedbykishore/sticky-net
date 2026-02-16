@@ -2,9 +2,9 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Annotated
+from typing import Annotated, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class SenderType(str, Enum):
@@ -28,7 +28,26 @@ class Message(BaseModel):
 
     sender: str  # Accept any sender identifier
     text: Annotated[str, Field(min_length=1, max_length=10000)]  # Increased limit for long scam messages
-    timestamp: datetime
+    timestamp: Union[int, str, datetime]  # Accept epoch ms (int), ISO string, or datetime
+
+    @field_validator("timestamp", mode="before")
+    @classmethod
+    def normalize_timestamp(cls, v: Union[int, str, datetime]) -> datetime:
+        """Normalize timestamp to datetime object."""
+        if isinstance(v, datetime):
+            return v
+        if isinstance(v, int):
+            # Epoch milliseconds -> convert to datetime
+            return datetime.fromtimestamp(v / 1000.0)
+        if isinstance(v, str):
+            # ISO format string -> parse to datetime
+            # Handle both with and without timezone
+            try:
+                return datetime.fromisoformat(v.replace("Z", "+00:00"))
+            except ValueError:
+                # Fallback: try parsing without timezone
+                return datetime.fromisoformat(v)
+        raise ValueError(f"Invalid timestamp format: {v}")
 
 
 class ConversationMessage(BaseModel):
@@ -53,6 +72,7 @@ class AnalyzeRequest(BaseModel):
     message: Message
     conversationHistory: list[ConversationMessage] = Field(default_factory=list)
     metadata: Metadata = Field(default_factory=Metadata)
+    sessionId: str | None = None  # Optional session ID for multi-turn tracking
 
     model_config = {
         "json_schema_extra": {
@@ -101,6 +121,7 @@ class ExtractedIntelligence(BaseModel):
     bankNames: list[str] = Field(default_factory=list)
     ifscCodes: list[str] = Field(default_factory=list)
     whatsappNumbers: list[str] = Field(default_factory=list)
+    suspiciousKeywords: list[str] = Field(default_factory=list)  # Keywords indicating scam
     other_critical_info: list[OtherIntelItem] = Field(default_factory=list)
 
 
@@ -179,3 +200,10 @@ class ErrorResponse(BaseModel):
     status: StatusType = StatusType.ERROR
     error: str
     detail: str | None = None
+
+
+class HoneyPotResponse(BaseModel):
+    """Simplified response model for honeypot agent."""
+
+    status: str  # "success" or "error"
+    reply: str   # The agent's response message

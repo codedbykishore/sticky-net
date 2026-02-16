@@ -4,6 +4,10 @@ The AI (LLM) is the PRIMARY extractor - it understands semantic context
 (e.g., "Your account" = victim's, "Transfer to" = scammer's).
 
 Regex is ONLY used for FORMAT VALIDATION of AI-extracted data.
+Suspicious keyword extraction is done entirely by AI (not regex) because:
+- Scammers use misspellings, variations, and novel phrasing
+- Context matters (AI understands semantic urgency)
+- We're already calling the LLM, so no extra cost
 """
 
 import re
@@ -35,6 +39,7 @@ class ExtractionResult:
     bank_names: list[str] = field(default_factory=list)
     ifsc_codes: list[str] = field(default_factory=list)
     whatsapp_numbers: list[str] = field(default_factory=list)
+    suspicious_keywords: list[str] = field(default_factory=list)
     source: ExtractionSource = ExtractionSource.AI
 
     @property
@@ -49,7 +54,8 @@ class ExtractionResult:
             self.beneficiary_names or
             self.bank_names or
             self.ifsc_codes or
-            self.whatsapp_numbers
+            self.whatsapp_numbers or
+            self.suspicious_keywords
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -64,6 +70,7 @@ class ExtractionResult:
             "bankNames": self.bank_names,
             "ifscCodes": self.ifsc_codes,
             "whatsappNumbers": self.whatsapp_numbers,
+            "suspiciousKeywords": self.suspicious_keywords,
         }
 
 
@@ -154,6 +161,9 @@ class IntelligenceExtractor:
                     value=str(item["value"]),
                 ))
 
+        # Extract suspicious keywords from AI extraction (if provided) or empty list
+        suspicious_keywords = [str(kw).strip().lower() for kw in ai_extracted.get("suspicious_keywords", []) if kw]
+
         result = ExtractedIntelligence(
             bankAccounts=validated_accounts,
             upiIds=validated_upi,
@@ -164,6 +174,7 @@ class IntelligenceExtractor:
             bankNames=validated_banks,
             ifscCodes=validated_ifsc,
             whatsappNumbers=validated_whatsapp,
+            suspiciousKeywords=suspicious_keywords,
             other_critical_info=other_info,
         )
 
@@ -176,6 +187,7 @@ class IntelligenceExtractor:
             beneficiary_names=len(result.beneficiaryNames),
             ifsc_codes=len(result.ifscCodes),
             whatsapp_numbers=len(result.whatsappNumbers),
+            suspicious_keywords=len(result.suspiciousKeywords),
             other_info=len(result.other_critical_info),
         )
 
@@ -227,6 +239,7 @@ class IntelligenceExtractor:
             bank_names=validated.bankNames,
             ifsc_codes=validated.ifscCodes,
             whatsapp_numbers=validated.whatsappNumbers,
+            suspicious_keywords=validated.suspiciousKeywords,
             source=ExtractionSource.AI,
         )
 
@@ -283,6 +296,7 @@ class IntelligenceExtractor:
             bankNames=llm_intel.bankNames,  # Keep as-is
             ifscCodes=[c for c in llm_intel.ifscCodes if self._validate_ifsc(c.upper())],
             whatsappNumbers=[w for w in llm_intel.whatsappNumbers if self._validate_phone(self._clean_number(w))],
+            suspiciousKeywords=llm_intel.suspiciousKeywords,  # Keep as-is
             other_critical_info=llm_intel.other_critical_info,  # Keep as-is
         )
 
@@ -296,6 +310,7 @@ class IntelligenceExtractor:
             phone_numbers_out=len(validated.phoneNumbers),
             ifsc_codes_in=len(llm_intel.ifscCodes),
             ifsc_codes_out=len(validated.ifscCodes),
+            suspicious_keywords=len(validated.suspiciousKeywords),
         )
 
         return validated

@@ -153,8 +153,9 @@ class TestAnalyzeEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "success"
-        assert data["scamDetected"] is True
-        assert "agentResponse" in data
+        # New simplified response format: just status and reply
+        assert "reply" in data
+        assert isinstance(data["reply"], str)
 
     @patch("src.api.routes.ScamDetector")
     def test_legitimate_message_returns_no_scam(
@@ -182,7 +183,9 @@ class TestAnalyzeEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "success"
-        assert data["scamDetected"] is False
+        # New simplified response format: just status and reply
+        assert "reply" in data
+        assert isinstance(data["reply"], str)
 
     def test_invalid_request_body_returns_422(
         self,

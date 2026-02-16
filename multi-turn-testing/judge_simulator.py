@@ -368,7 +368,7 @@ class JudgeSimulator:
 
     def run(self, scenario_path: str | None = None):
         """Run the simulator on one or all scenarios."""
-        scenarios_dir = os.path.join(os.path.dirname(__file__), "scenarios-2")
+        scenarios_dir = os.path.join(os.path.dirname(__file__), "scenarios")
 
         if scenario_path:
             # Make path absolute if relative

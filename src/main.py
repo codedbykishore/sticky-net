@@ -78,9 +78,19 @@ def create_app() -> FastAPI:
     setup_middleware(app)
 
     # CORS middleware (added last, runs first to handle preflight)
+    allowed_origins = [
+        "http://localhost:3000",
+        "http://localhost:8080",
+        "https://sticky-net-frontend-140367184766.asia-south1.run.app",
+        "https://hackathon.guvi.in",  # Hackathon testing framework
+        "https://www.hackathon.guvi.in",  # Alternative URL
+    ]
+    if settings.debug:
+        allowed_origins.append("*")
+    
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"] if settings.debug else [],
+        allow_origins=allowed_origins if not settings.debug else ["*"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
