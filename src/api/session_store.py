@@ -103,6 +103,9 @@ def get_or_init_session_intel(session_id: str) -> dict[str, set]:
             "phishingLinks": set(),
             "emailAddresses": set(),
             "suspiciousKeywords": set(),
+            "caseIds": set(),
+            "policyNumbers": set(),
+            "orderNumbers": set(),
         }
         # Try to restore from Firestore
         client = _get_firestore_client()
@@ -131,6 +134,9 @@ def accumulate_intel(session_id: str, new_intel) -> dict:
         new_intel.emailAddresses if hasattr(new_intel, "emailAddresses") and new_intel.emailAddresses else []
     )
     store["suspiciousKeywords"].update(new_intel.suspiciousKeywords)
+    store["caseIds"].update(new_intel.caseIds if hasattr(new_intel, "caseIds") else [])
+    store["policyNumbers"].update(new_intel.policyNumbers if hasattr(new_intel, "policyNumbers") else [])
+    store["orderNumbers"].update(new_intel.orderNumbers if hasattr(new_intel, "orderNumbers") else [])
 
     # Persist to Firestore
     _persist_session(session_id)
@@ -146,6 +152,22 @@ def get_session_classification(session_id: str) -> Any | None:
 def set_session_classification(session_id: str, classification: Any) -> None:
     """Cache a classification result for this session."""
     _CLASSIFICATIONS[session_id] = classification
+
+
+# ---------------------------------------------------------------------------
+# Detection result persistence — "once scam, always scam" (Fix 4B)
+# ---------------------------------------------------------------------------
+_DETECTIONS: dict[str, Any] = {}
+
+
+def store_detection_result(session_id: str, result: Any) -> None:
+    """Store last detection result for persistent suspicion."""
+    _DETECTIONS[session_id] = result
+
+
+def get_previous_detection(session_id: str) -> Any | None:
+    """Get previous detection result for this session."""
+    return _DETECTIONS.get(session_id)
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +205,9 @@ def _restore_intel_from_doc(session_id: str, data: dict) -> None:
         "phishingLinks": set(),
         "emailAddresses": set(),
         "suspiciousKeywords": set(),
+        "caseIds": set(),
+        "policyNumbers": set(),
+        "orderNumbers": set(),
     })
 
     for key in store:

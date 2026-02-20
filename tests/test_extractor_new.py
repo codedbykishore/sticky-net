@@ -4,7 +4,7 @@ import pytest
 
 from src.intelligence.extractor import IntelligenceExtractor, ExtractionResult
 from src.intelligence.validators import ExtractionSource
-from src.api.schemas import ExtractedIntelligence, OtherIntelItem
+from src.api.schemas import ExtractedIntelligence
 
 
 class TestAIExtractionValidation:
@@ -150,19 +150,34 @@ class TestAIExtractionValidation:
         result = extractor.validate_ai_extraction(ai_extracted)
         assert "9876543210" in result.whatsappNumbers
 
-    # Other Critical Info Tests
-    def test_parses_other_critical_info(self, extractor: IntelligenceExtractor):
-        """Should parse other_critical_info items."""
+    # Case IDs / Policy Numbers / Order Numbers Tests
+    def test_parses_case_ids(self, extractor: IntelligenceExtractor):
+        """Should parse caseIds from AI extraction."""
         ai_extracted = {
-            "other_critical_info": [
-                {"label": "Remote Access Tool", "value": "AnyDesk"},
-                {"label": "Crypto Address", "value": "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2"},
-            ]
+            "caseIds": ["CASE-2024-001", "REF-XYZ-123"],
         }
         result = extractor.validate_ai_extraction(ai_extracted)
-        assert len(result.other_critical_info) == 2
-        assert result.other_critical_info[0].label == "Remote Access Tool"
-        assert result.other_critical_info[0].value == "AnyDesk"
+        assert len(result.caseIds) == 2
+        assert "CASE-2024-001" in result.caseIds
+        assert "REF-XYZ-123" in result.caseIds
+
+    def test_parses_policy_numbers(self, extractor: IntelligenceExtractor):
+        """Should parse policyNumbers from AI extraction."""
+        ai_extracted = {
+            "policyNumbers": ["POL-98765"],
+        }
+        result = extractor.validate_ai_extraction(ai_extracted)
+        assert len(result.policyNumbers) == 1
+        assert "POL-98765" in result.policyNumbers
+
+    def test_parses_order_numbers(self, extractor: IntelligenceExtractor):
+        """Should parse orderNumbers from AI extraction."""
+        ai_extracted = {
+            "orderNumbers": ["ORD-2024-56789", "TXN/12345"],
+        }
+        result = extractor.validate_ai_extraction(ai_extracted)
+        assert len(result.orderNumbers) == 2
+        assert "ORD-2024-56789" in result.orderNumbers
 
     # Multiple Types Test
     def test_validates_multiple_types(self, extractor: IntelligenceExtractor):

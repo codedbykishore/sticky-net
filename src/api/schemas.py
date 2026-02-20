@@ -55,7 +55,30 @@ class ConversationMessage(BaseModel):
 
     sender: str  # Accept any sender identifier
     text: str
-    timestamp: datetime
+    timestamp: Union[int, str, datetime]  # Accept epoch ms (int), ISO string, or datetime
+
+    @field_validator("timestamp", mode="before")
+    @classmethod
+    def normalize_timestamp(cls, v: Union[int, str, datetime]) -> datetime:
+        """Normalize timestamp to datetime object (same logic as Message)."""
+        if isinstance(v, datetime):
+            return v
+        if isinstance(v, (int, float)):
+            # Epoch milliseconds -> convert to datetime
+            return datetime.fromtimestamp(v / 1000.0)
+        if isinstance(v, str):
+            # Try epoch string first
+            try:
+                epoch = float(v)
+                return datetime.fromtimestamp(epoch / 1000.0)
+            except ValueError:
+                pass
+            # ISO format string -> parse to datetime
+            try:
+                return datetime.fromisoformat(v.replace("Z", "+00:00"))
+            except ValueError:
+                return datetime.fromisoformat(v)
+        raise ValueError(f"Invalid timestamp format: {v}")
 
 
 class Metadata(BaseModel):
@@ -102,13 +125,6 @@ class EngagementMetrics(BaseModel):
     totalMessagesExchanged: int = 0
 
 
-class OtherIntelItem(BaseModel):
-    """Ad-hoc intelligence item for data that doesn't fit standard fields."""
-
-    label: str  # e.g., "Crypto Wallet", "TeamViewer ID", "WhatsApp Group Link"
-    value: str  # The actual extracted value
-
-
 class ExtractedIntelligence(BaseModel):
     """Extracted intelligence model."""
 
@@ -122,7 +138,9 @@ class ExtractedIntelligence(BaseModel):
     ifscCodes: list[str] = Field(default_factory=list)
     whatsappNumbers: list[str] = Field(default_factory=list)
     suspiciousKeywords: list[str] = Field(default_factory=list)  # Keywords indicating scam
-    other_critical_info: list[OtherIntelItem] = Field(default_factory=list)
+    caseIds: list[str] = Field(default_factory=list)
+    policyNumbers: list[str] = Field(default_factory=list)
+    orderNumbers: list[str] = Field(default_factory=list)
 
 
 class AgentJsonResponse(BaseModel):

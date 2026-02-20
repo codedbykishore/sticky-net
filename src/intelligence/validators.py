@@ -556,7 +556,6 @@ def validate_extraction_result(data: dict[str, Any]) -> dict[str, Any]:
         "bank_names": [],
         "ifsc_codes": [],
         "whatsapp_numbers": [],
-        "other_critical_info": [],
     }
 
     # Validate bank accounts
@@ -607,9 +606,6 @@ def validate_extraction_result(data: dict[str, Any]) -> dict[str, Any]:
         if validate_phone_number(str(wa)):
             clean = _clean_phone_number(str(wa))
             validated["whatsapp_numbers"].append(clean)
-
-    # Keep other_critical_info as-is (AI is better at catching these)
-    validated["other_critical_info"] = data.get("other_critical_info", []) or []
 
     return validated
 

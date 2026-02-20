@@ -187,15 +187,18 @@ class TestAnalyzeEndpoint:
         assert "reply" in data
         assert isinstance(data["reply"], str)
 
-    def test_invalid_request_body_returns_422(
+    def test_invalid_request_body_returns_200_with_fallback(
         self,
         client: TestClient,
         auth_headers: dict,
     ):
-        """Invalid request body should return 422."""
+        """Invalid request body should return 200 with fallback reply (Fix 8C: never 422)."""
         response = client.post(
             "/api/v1/analyze",
             json={"invalid": "data"},
             headers=auth_headers,
         )
-        assert response.status_code == 422
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert "reply" in data

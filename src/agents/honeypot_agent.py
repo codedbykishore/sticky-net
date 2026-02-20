@@ -21,7 +21,6 @@ from src.api.schemas import (
     ExtractedIntelligence,
     Message,
     Metadata,
-    OtherIntelItem,
     SenderType,
 )
 from src.detection.detector import DetectionResult
@@ -481,21 +480,11 @@ Generate your response as Pushpa Verma:"""
         """Parse the JSON response from the agent. Returns None if parsing fails.
 
         Handles common LLM quirks:
-        - ``other_critical_info`` returned as list[str] instead of list[dict]
         - Markdown code fences around JSON
         """
         try:
             text = self._extract_json_text(response_text)
             data = json.loads(text)
-
-            # Normalise other_critical_info: convert bare strings → OtherIntelItem dicts
-            intel = data.get("extracted_intelligence", {})
-            raw_other = intel.get("other_critical_info", [])
-            if raw_other and isinstance(raw_other[0], str):
-                intel["other_critical_info"] = [
-                    {"label": "info", "value": v} for v in raw_other
-                ]
-                data["extracted_intelligence"] = intel
 
             return AgentJsonResponse(**data)
         except (json.JSONDecodeError, ValidationError, KeyError, TypeError) as e:
@@ -662,12 +651,6 @@ Generate your response as Pushpa Verma:"""
                 salvaged_intel = None
                 if isinstance(intel_dict, dict):
                     try:
-                        # Normalise other_critical_info strings → dicts
-                        raw_other = intel_dict.get("other_critical_info", [])
-                        if raw_other and isinstance(raw_other[0], str):
-                            intel_dict["other_critical_info"] = [
-                                {"label": "info", "value": v} for v in raw_other
-                            ]
                         salvaged_intel = ExtractedIntelligence(**intel_dict)
                     except Exception:
                         pass  # skip intel if it can't be parsed
@@ -735,8 +718,12 @@ Generate your response as Pushpa Verma:"""
                 intel_counts.append(f"{len(extracted_intel.whatsappNumbers)} WhatsApp(s)")
             if extracted_intel.beneficiaryNames:
                 intel_counts.append(f"{len(extracted_intel.beneficiaryNames)} Name(s)")
-            if extracted_intel.other_critical_info:
-                intel_counts.append(f"{len(extracted_intel.other_critical_info)} Other Intel")
+            if extracted_intel.caseIds:
+                intel_counts.append(f"{len(extracted_intel.caseIds)} Case ID(s)")
+            if extracted_intel.policyNumbers:
+                intel_counts.append(f"{len(extracted_intel.policyNumbers)} Policy Number(s)")
+            if extracted_intel.orderNumbers:
+                intel_counts.append(f"{len(extracted_intel.orderNumbers)} Order Number(s)")
             
             if intel_counts:
                 notes_parts.append(f"Extracted: {', '.join(intel_counts)}")
