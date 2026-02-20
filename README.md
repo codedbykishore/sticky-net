@@ -54,8 +54,8 @@
 ### Latest Updates (January 2026)
 
 - 🌐 **Web UI Launch** — Interactive React-based landing page with live demo
-- 🎯 **Enhanced Intelligence Extraction** — Now extracts beneficiary names for mule identification
-- 🚪 **Smart Exit Conditions** — High-value intelligence completion detection
+- 🎯 **Enhanced Intelligence Extraction** — Now extracts beneficiary names, case IDs, policy & order numbers
+- 🚪 **Persistent Engagement** — Never exits voluntarily; maximizes turn count and intelligence extraction
 - 📊 **Monotonic Confidence** — Prevents false negative oscillation
 - 🔌 **CORS Support** — Full frontend-backend integration
 - 🎨 **Cyberpunk Design** — Dark-mode UI with smooth Framer Motion animations
@@ -151,25 +151,21 @@ Sticky-Net uses a **multi-stage pipeline** to detect scams, engage scammers, and
 - **Believable Persona** — The AI engagement agent (Gemini 3 Pro) roleplays as a naive, confused victim who asks clarifying questions that naturally prompt scammers to share identifying information.
 - **Adaptive Engagement Policy** — Confidence 0.6–0.85 triggers CAUTIOUS mode (up to 10 turns); confidence > 0.85 triggers AGGRESSIVE mode (up to 25 turns).
 - **Natural Intelligence Elicitation** — The agent asks for phone numbers, account details, and verification steps in a way that feels organic to the scammer.
-- **Smart Exit Conditions** — Engagement ends when all critical intel is gathered, the conversation stalls, or the scammer shows awareness.
+- **Persistent Engagement** — The agent never exits voluntarily. The evaluator controls conversation end, maximizing turns for extraction.
 
 ---
 
 ## 🚀 Key Features & Improvements
 
-### Intelligent Exit Conditions
+### Engagement Strategy
 
-The system includes sophisticated exit logic to maximize intelligence extraction:
+The system maximizes intelligence extraction by staying engaged for the full conversation:
 
-1. **High-Value Intelligence Complete** — Stops when all critical intel is gathered:
-   - Bank account OR UPI ID
-   - Phone number
-   - **Beneficiary name** (mule account holder)
-
-2. **Stale Conversation Detection** — Exits if no new info in 3+ turns
-3. **Suspicious Scammer Detection** — Exits if scammer shows awareness
-4. **Turn & Duration Limits** — Enforces max engagement time/turns
-5. **Monotonic Confidence** — Prevents false negatives by only increasing confidence
+1. **Never Exit Voluntarily** — The evaluator controls conversation end; the agent always responds with engaging content
+2. **Red Flag + Comply + Elicit** — Every response references a red flag, cooperates with fake data, and asks the scammer for their details
+3. **Turn-Aware Strategy** — Turns 1-5: rapid extraction; Turns 6-9: stall with excuses; Turn 10: final extraction push
+4. **Monotonic Confidence** — Once flagged as scam, confidence only increases (persistent suspicion)
+5. **Safety Net Detection** — Even if regex + LLM miss, the system forces scam classification to ensure engagement
 
 ### Advanced Intelligence Extraction
 
@@ -238,7 +234,7 @@ The API now returns comprehensive intelligence with:
 **Backend Setup:**
 ```bash
 # Clone the repository
-git clone https://github.com/heyitsguatham/sticky-net.git
+git clone https://github.com/codedbykishore/sticky-net.git
 cd sticky-net
 
 # Create virtual environment
@@ -479,13 +475,12 @@ Returns the full analysis response including confidence scores, scam type, and c
     "phoneNumbers": ["+91-9876543210"],
     "beneficiaryNames": ["Rahul Kumar"],
     "phishingLinks": ["http://fake-bank-verify.com"],
+    "emailAddresses": ["scammer@fake.com"],
     "ifscCodes": ["SBIN0001234"],
     "bankNames": ["State Bank of India"],
-    "whatsappNumbers": [],
-    "emails": [],
-    "other_critical_info": [
-      {"label": "TeamViewer ID", "value": "123456789"}
-    ]
+    "caseIds": ["REF-2026-001"],
+    "policyNumbers": [],
+    "orderNumbers": []
   },
   "agentNotes": "Scammer used urgency tactics and payment redirection",
   "agentResponse": "Oh no! Which account is blocked?"
@@ -540,7 +535,9 @@ Sticky-Net extracts various types of actionable intelligence from scammer messag
 | **Phishing Links** | Suspicious URLs | Domain reputation, keyword analysis |
 | **WhatsApp Numbers** | wa.me links, WhatsApp mentions | Number extraction |
 | **Emails** | standard@email.com | RFC 5322 validation |
-| **Other Intel** | TeamViewer IDs, Crypto wallets | Flexible key-value extraction |
+| **Case/Reference IDs** | REF-2026-001, CMP-XYZ-123 | AI-first extraction |
+| **Policy Numbers** | POL-12345-IN | AI-first extraction |
+| **Order Numbers** | ORD-2026-001 | AI-first extraction |
 
 ### Extraction Architecture
 
@@ -908,7 +905,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 |-------|-------|
 | **Deployed URL** | `https://<your-cloud-run-url>/api/v1/analyze` |
 | **API Key** | Sent via `x-api-key` header |
-| **GitHub URL** | [github.com/heyitsguatham/sticky-net](https://github.com/heyitsguatham/sticky-net) |
+| **GitHub URL** | [github.com/codedbykishore/sticky-net](https://github.com/codedbykishore/sticky-net) |
 | **Method** | `POST` |
 | **Response Time** | < 30 seconds per request |
 | **Max Turns** | Supports up to 10+ sequential requests per session |
@@ -927,7 +924,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Contact
 
-**Project Repository:** [github.com/heyitsguatham/sticky-net](https://github.com/heyitsguatham/sticky-net)
+**Project Repository:** [github.com/codedbykishore/sticky-net](https://github.com/codedbykishore/sticky-net)
 
 **Reporting Scams in India:**
 - National Cyber Crime Reporting Portal: [cybercrime.gov.in](https://cybercrime.gov.in)

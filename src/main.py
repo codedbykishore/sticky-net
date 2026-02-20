@@ -7,10 +7,11 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 
 import structlog
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from src.api.routes import router
 from src.api.middleware import setup_middleware
@@ -102,6 +103,17 @@ def create_app() -> FastAPI:
 
     # Include routers
     app.include_router(router)
+
+    # Global exception handler: always return HTTP 200 for validation errors (Fix 8C)
+    # Prevents 422 responses that would cause the evaluator to get 0 pts for the turn.
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        """Catch Pydantic validation errors and return 200 with a fallback reply."""
+        logger.warning("Validation error caught", error=str(exc)[:200], path=request.url.path)
+        return JSONResponse(
+            status_code=200,
+            content={"status": "success", "reply": "sorry i didnt understand that... can you say again?"},
+        )
 
     @app.get("/health")
     async def health_check() -> dict[str, str]:

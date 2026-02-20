@@ -16,7 +16,7 @@ from typing import Any
 
 import structlog
 
-from src.api.schemas import ExtractedIntelligence, OtherIntelItem
+from src.api.schemas import ExtractedIntelligence
 from src.intelligence.validators import (
     ExtractionSource,
     UPI_PROVIDERS,
@@ -152,14 +152,10 @@ class IntelligenceExtractor:
             if self._validate_phone(clean):
                 validated_whatsapp.append(clean)
 
-        # Parse other_critical_info
-        other_info = []
-        for item in ai_extracted.get("other_critical_info", []):
-            if isinstance(item, dict) and item.get("label") and item.get("value"):
-                other_info.append(OtherIntelItem(
-                    label=str(item["label"]),
-                    value=str(item["value"]),
-                ))
+        # Parse caseIds, policyNumbers, orderNumbers (AI-first, no strict validation)
+        case_ids = [str(c).strip() for c in ai_extracted.get("caseIds", ai_extracted.get("case_ids", [])) if c]
+        policy_numbers = [str(p).strip() for p in ai_extracted.get("policyNumbers", ai_extracted.get("policy_numbers", [])) if p]
+        order_numbers = [str(o).strip() for o in ai_extracted.get("orderNumbers", ai_extracted.get("order_numbers", [])) if o]
 
         # Extract suspicious keywords from AI extraction (if provided) or empty list
         suspicious_keywords = [str(kw).strip().lower() for kw in ai_extracted.get("suspicious_keywords", []) if kw]
@@ -175,7 +171,9 @@ class IntelligenceExtractor:
             ifscCodes=validated_ifsc,
             whatsappNumbers=validated_whatsapp,
             suspiciousKeywords=suspicious_keywords,
-            other_critical_info=other_info,
+            caseIds=case_ids,
+            policyNumbers=policy_numbers,
+            orderNumbers=order_numbers,
         )
 
         self.logger.info(
@@ -188,7 +186,9 @@ class IntelligenceExtractor:
             ifsc_codes=len(result.ifscCodes),
             whatsapp_numbers=len(result.whatsappNumbers),
             suspicious_keywords=len(result.suspiciousKeywords),
-            other_info=len(result.other_critical_info),
+            case_ids=len(result.caseIds),
+            policy_numbers=len(result.policyNumbers),
+            order_numbers=len(result.orderNumbers),
         )
 
         return result
@@ -220,20 +220,26 @@ class IntelligenceExtractor:
             if self._validate_bank_account(num) and not self._looks_like_phone(num):
                 accounts.append(num)
         
-        # UPI IDs: word@provider  
+        # UPI IDs and Emails: split based on dot-in-domain rule
+        # Match any user@something pattern
         upi_ids = []
-        for match in re.finditer(r'([\w.-]+@[a-zA-Z][a-zA-Z0-9]*)', text):
-            upi_candidate = match.group(1).lower()
-            # Exclude emails (which have dots in domain)
-            if '.' not in upi_candidate.split('@')[1]:
-                if self._validate_upi_id(upi_candidate):
-                    upi_ids.append(upi_candidate)
+        emails = []
+        for match in re.finditer(r'([\w.+-]+@[\w.-]+)', text):
+            candidate = match.group(1).lower().rstrip('.')
+            parts = candidate.split('@')
+            if len(parts) != 2 or not parts[0] or not parts[1]:
+                continue
+            domain = parts[1]
+            if '.' in domain:
+                # Email: user@domain.tld (e.g., scam@fake.com, offers@fake-amazon.co.in)
+                emails.append(candidate)
+            else:
+                # UPI: user@provider (e.g., scammer@ybl, ravi@paytm, x@okaxis)
+                if self._validate_upi_id(candidate):
+                    upi_ids.append(candidate)
         
         # Phishing links: http/https URLs
         urls = re.findall(r'https?://[^\s<>"\')]+', text)
-        
-        # Email addresses: user@domain.tld
-        emails = re.findall(r'[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}', text)
         
         return ExtractionResult(
             bank_accounts=accounts,
@@ -366,7 +372,9 @@ class IntelligenceExtractor:
             ifscCodes=[c for c in llm_intel.ifscCodes if self._validate_ifsc(c.upper())],
             whatsappNumbers=[w for w in llm_intel.whatsappNumbers if self._validate_phone(self._clean_number(w))],
             suspiciousKeywords=llm_intel.suspiciousKeywords,  # Keep as-is
-            other_critical_info=llm_intel.other_critical_info,  # Keep as-is
+            caseIds=llm_intel.caseIds,  # Keep as-is (AI-first)
+            policyNumbers=llm_intel.policyNumbers,  # Keep as-is (AI-first)
+            orderNumbers=llm_intel.orderNumbers,  # Keep as-is (AI-first)
         )
 
         self.logger.info(

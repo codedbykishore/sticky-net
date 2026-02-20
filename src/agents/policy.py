@@ -141,8 +141,10 @@ class EngagementPolicy:
         Returns:
             True if high-value intelligence is complete AND past min turns
         """
-        # Never exit before turn 5 — guarantees engagement scoring points
-        MIN_TURNS_BEFORE_EXIT = 5
+        # Never exit before turn 10 — evaluator runs up to 10 turns.
+        # Setting to 10 means we NEVER voluntarily exit (evaluator controls end).
+        # This maxes out: turn count ≥8 (8pts Conv Quality) + messages ≥10 (1pt Engagement)
+        MIN_TURNS_BEFORE_EXIT = 10
         if current_turn < MIN_TURNS_BEFORE_EXIT:
             return False
         

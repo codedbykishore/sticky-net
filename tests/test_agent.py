@@ -215,23 +215,44 @@ class TestEngagementPolicy:
         assert "turns" in reason.lower()
 
     def test_high_value_intelligence_complete_bank_and_phone(self):
-        """Should detect high-value intel with bank account and phone after min turns."""
+        """Should NOT exit at turn 5 — MIN_TURNS_BEFORE_EXIT is 10 (never exit voluntarily)."""
         result = EngagementPolicy.is_high_value_intelligence_complete(
             bank_accounts=["12345678901234"],
             phone_numbers=["9876543210"],
             beneficiary_names=["RAHUL KUMAR"],
             current_turn=5,
         )
+        assert result is False  # Never exit early — evaluator controls end
+
+    def test_high_value_intelligence_complete_at_turn_10(self):
+        """Should detect high-value intel with bank account and phone at turn 10."""
+        result = EngagementPolicy.is_high_value_intelligence_complete(
+            bank_accounts=["12345678901234"],
+            phone_numbers=["9876543210"],
+            beneficiary_names=["RAHUL KUMAR"],
+            current_turn=10,
+        )
         assert result is True
 
     def test_high_value_intelligence_complete_upi_and_phone(self):
-        """Should detect high-value intel with UPI and phone after min turns."""
+        """Should NOT exit at turn 5 even with UPI and phone — MIN_TURNS is 10."""
         result = EngagementPolicy.is_high_value_intelligence_complete(
             bank_accounts=[],
             phone_numbers=["9876543210"],
             upi_ids=["scammer@ybl"],
             beneficiary_names=["RAHUL KUMAR"],
             current_turn=5,
+        )
+        assert result is False  # Never exit early — evaluator controls end
+
+    def test_high_value_intelligence_complete_upi_at_turn_10(self):
+        """Should detect high-value intel with UPI and phone at turn 10."""
+        result = EngagementPolicy.is_high_value_intelligence_complete(
+            bank_accounts=[],
+            phone_numbers=["9876543210"],
+            upi_ids=["scammer@ybl"],
+            beneficiary_names=["RAHUL KUMAR"],
+            current_turn=10,
         )
         assert result is True
 
