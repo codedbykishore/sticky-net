@@ -92,106 +92,23 @@ class ScamClassifier:
     that regex patterns would miss.
     """
 
-    CLASSIFICATION_PROMPT = """Analyze if this message/conversation is a SCAM attempt.
+    CLASSIFICATION_PROMPT = """Classify if this message is a SCAM. Return ONLY valid JSON.
 
-CONVERSATION HISTORY:
+HISTORY:
 {history}
 
-NEW MESSAGE:
-"{message}"
+NEW MESSAGE: "{message}"
 
-METADATA:
-- Channel: {channel}
-- Locale: {locale}
-- Timestamp: {timestamp}
+METADATA: channel={channel}, locale={locale}
 
-PREVIOUS ASSESSMENT (if any):
-{previous_assessment}
+PREVIOUS ASSESSMENT: {previous_assessment}
 
-═══════════════════════════════════════════════════════════════════════════════
-CRITICAL: WHAT IS A SCAM vs WHAT IS NOT A SCAM
-═══════════════════════════════════════════════════════════════════════════════
+SCAM = deception/coercion via: impersonation, false pretenses, threats, credential theft, or phishing.
+NOT SCAM = transparent personal requests without deception.
 
-A SCAM involves DECEPTION or COERCION. At least ONE of these must be present:
-  ✗ IMPERSONATION: Pretending to be someone else (bank, government, police, tech support)
-  ✗ FALSE PRETENSES: Lying about a situation (your account is blocked, you won a lottery)
-  ✗ THREATS/COERCION: Threatening consequences (arrest, account closure, legal action)
-  ✗ DATA THEFT: Requesting OTPs, passwords, CVV, PINs to steal credentials
-  ✗ PHISHING: Fake links to steal login credentials
+SCAM TYPES: "job_offer" | "banking_fraud" | "lottery_reward" | "impersonation" | "others"
 
-NOT A SCAM - Personal/Direct Requests (even if annoying):
-  ✓ Direct money requests from someone identifying themselves transparently
-  ✓ Friend/acquaintance asking for money urgently (even if suspicious relationship)
-  ✓ Informal requests like "send me ₹5000 to my UPI" WITHOUT impersonation/threats
-  ✓ Begging or guilt-tripping WITHOUT impersonation
-
-KEY DISTINCTION:
-- "I'm Ravi, urgently need ₹5000, send to ravi@upi" → NOT SCAM (transparent request)
-- "I'm from SBI, your account is blocked, send ₹5000 to verify@upi" → SCAM (impersonation + false pretense)
-- "Send money or your account will be closed" → SCAM (threat/coercion)
-- "Hey bro, can you lend me 10k? I'll pay back" → NOT SCAM (direct personal request)
-
-═══════════════════════════════════════════════════════════════════════════════
-ANALYSIS GUIDELINES
-═══════════════════════════════════════════════════════════════════════════════
-
-1. Does the sender IMPERSONATE an authority (bank, police, company)?
-2. Does the message contain FALSE CLAIMS (account blocked, lottery won, unauthorized transaction)?
-3. Are there THREATS or COERCION tactics (arrest, account closure, legal action)?
-4. Is there a request for SENSITIVE DATA (OTP, password, CVV)?
-5. Is there a PHISHING LINK designed to steal credentials?
-
-If NONE of the above → NOT A SCAM (even if it's a money request)
-
-═══════════════════════════════════════════════════════════════════════════════
-SCAM SIGNAL INDICATORS (Red Flags to Watch For)
-═══════════════════════════════════════════════════════════════════════════════
-
-• ARTIFICIAL URGENCY:
-  - "Expires in X minutes/hours", "Act now", "Immediate action required"
-  - "Last chance", "Hurry", "Limited time offer", "Today only"
-  - Time pressure designed to prevent rational thinking
-
-• AUTHORITY IMPERSONATION:
-  - Fake RBI, SEBI, TRAI officials demanding verification
-  - Police/CBI/ED threatening arrest or legal action
-  - Bank officials claiming account issues requiring immediate action
-  - Government entities demanding Aadhaar/PAN linking
-
-• PAYMENT REQUEST RED FLAGS:
-  - OTP, PIN, CVV, or password requests (no legitimate entity asks for these)
-  - UPI transfers to unknown/personal accounts for "verification"
-  - "Refundable" security deposits or processing fees
-  - Requests to install remote access apps (TeamViewer, AnyDesk)
-
-• PHISHING INDICATORS:
-  - Suspicious links with misspellings (amaz0n, g00gle)
-  - URL shorteners: bit.ly, tinyurl, short.io (hiding real destination)
-  - "Click to verify", "Login to secure your account"
-  - Links to non-official domains pretending to be banks/services
-
-• THREAT TACTICS:
-  - "Account will be blocked/suspended/frozen"
-  - "Arrest warrant issued", "FIR registered against you"
-  - "Legal action will be taken", "Case filed"
-  - "Your family will be informed"
-
-• FINANCIAL LURES:
-  - Lottery/prize winnings you never entered
-  - Job offers requiring upfront payment or "registration fees"
-  - Refund scams claiming overpayment
-  - Investment schemes promising unrealistic returns
-  - "You've been selected" for exclusive opportunities
-
-SCAM TYPE CLASSIFICATION (required if is_scam=true):
-- "job_offer": Part-time job offers, work from home, YouTube/Instagram liking tasks, easy money schemes
-- "banking_fraud": KYC update requests, account blocked warnings, verify account, link Aadhaar/PAN
-- "lottery_reward": Lottery winner announcements, reward points expiring, cashback offers, lucky draw
-- "impersonation": Police/CBI/ED officer impersonation, bank manager calls, government official threats
-- "others": Investment scams, crypto schemes, romance scams, tech support scams
-
-Return ONLY valid JSON (no markdown):
-{{"is_scam": boolean, "confidence": float (0.0-1.0), "scam_type": "job_offer"|"banking_fraud"|"lottery_reward"|"impersonation"|"others"|null, "threat_indicators": [list of strings], "reasoning": "brief explanation"}}
+Return ONLY: {{"is_scam": bool, "confidence": float, "scam_type": str|null, "threat_indicators": [str], "reasoning": "brief"}}
 """
 
     def __init__(self) -> None:
@@ -253,7 +170,6 @@ Return ONLY valid JSON (no markdown):
             message=message,
             channel=metadata.channel if metadata else "unknown",
             locale=metadata.locale if metadata else "unknown",
-            timestamp=metadata.language if metadata else "unknown",
             previous_assessment=prev_text,
         )
 
@@ -276,11 +192,14 @@ Return ONLY valid JSON (no markdown):
                             timeout=timeout_seconds,
                         )
                         
-                        # Build config (thinking is high by default in Gemini 3)
+                        # Thinking set to MINIMAL for fast classification
                         config = types.GenerateContentConfig(
                             temperature=0.1,  # Low temperature for consistent classification
                             safety_settings=CLASSIFIER_SAFETY_SETTINGS,
-                            max_output_tokens=10000,
+                            max_output_tokens=1024,
+                            thinking_config=types.ThinkingConfig(
+                                thinking_budget=0,
+                            ),
                         )
                         
                         # Wrap API call with timeout (async with executor)

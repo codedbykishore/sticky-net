@@ -539,11 +539,10 @@ Generate your response as Pushpa Verma:"""
                         timeout=timeout_seconds,
                     )
                     
-                    # Gemini 3 Pro needs higher max_output_tokens because its
-                    # internal "thinking" consumes output tokens. 256 is too small
-                    # and causes MAX_TOKENS finish reason with empty text.
-                    # Thinking level is HIGH by default in Gemini 3
-                    max_tokens = 65536
+                    # Gemini 3 thinking set to MINIMAL to reduce latency.
+                    # With thinking_budget=0, the model skips deep reasoning
+                    # and we only need ~2K tokens for the JSON reply.
+                    max_tokens = 2048
                     
                     # Build config with model-specific settings
                     config = types.GenerateContentConfig(
@@ -551,6 +550,9 @@ Generate your response as Pushpa Verma:"""
                         temperature=self.settings.llm_temperature,
                         max_output_tokens=max_tokens,
                         safety_settings=HONEYPOT_SAFETY_SETTINGS,
+                        thinking_config=types.ThinkingConfig(
+                            thinking_budget=0,
+                        ),
                     )
                     
                     # Wrap API call with timeout

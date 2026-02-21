@@ -58,6 +58,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         debug=settings.debug,
         llm_model=settings.flash_model,
     )
+
+    # Pre-warm: initialize singletons so the first request doesn't pay cold-start cost.
+    # This creates the genai.Client (gRPC channel) and ScamDetector once at startup.
+    try:
+        from src.agents.honeypot_agent import get_agent
+        from src.detection.detector import get_detector
+        _agent = get_agent()
+        _detector = get_detector()
+        logger.info(
+            "Pre-warmed singletons",
+            agent_model=_agent.model,
+            detector="ready",
+        )
+    except Exception as exc:
+        logger.warning("Pre-warm failed (will lazy-init on first request)", error=str(exc))
+
     yield
     logger.info("Shutting down Sticky-Net")
 

@@ -26,7 +26,7 @@ from src.api.session_store import (
     store_detection_result,
     get_previous_detection,
 )
-from src.detection.detector import ScamDetector
+from src.detection.detector import ScamDetector, get_detector
 from src.agents.honeypot_agent import HoneypotAgent, get_agent
 from src.intelligence.extractor import IntelligenceExtractor
 from src.exceptions import StickyNetError
@@ -36,6 +36,15 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/api/v1", tags=["analyze"])
 
 # Session state is managed by src.api.session_store (Firestore-backed)
+
+
+async def _fire_callback(**kwargs) -> None:
+    """Fire-and-forget GUVI callback. Exceptions are silently logged."""
+    try:
+        success = await send_guvi_callback(scam_detected=True, **kwargs)
+        logger.info("GUVI callback sent", success=success, session_id=kwargs.get("session_id"))
+    except Exception as e:
+        logger.warning("GUVI callback failed", error=str(e))
 
 
 @router.post(
@@ -115,7 +124,8 @@ async def analyze_message(request: AnalyzeRequest) -> HoneyPotResponse:
 
     try:
         # Step 1: Detect scam (with persistent suspicion — Fix 4B)
-        detector = ScamDetector()
+        # Use singleton detector to avoid per-request genai.Client cold start
+        detector = get_detector()
         previous_detection = get_previous_detection(session_id)
         detection_result = await detector.analyze(
             message=request.message.text,
@@ -159,8 +169,8 @@ async def analyze_message(request: AnalyzeRequest) -> HoneyPotResponse:
         # Staying engaged maximizes turn count (8pts) and message count (1pt).
 
         # Step 2: Engage with AI agent FIRST (AI-first approach)
-        # AI extracts intelligence with semantic understanding (victim vs scammer)
-        agent = HoneypotAgent()
+        # Use singleton agent to avoid per-request genai.Client cold start
+        agent = get_agent()
         elapsed_so_far = time.time() - request_start_time
         agent_budget = max(1.0, TOTAL_REQUEST_BUDGET - elapsed_so_far)
         try:
@@ -318,26 +328,16 @@ async def analyze_message(request: AnalyzeRequest) -> HoneyPotResponse:
         # Build intelligence dict for callback with accumulated data
         callback_intelligence = accumulated_intel
         
-        # Fire callback asynchronously (don't wait for response)
-        try:
-            callback_success = await send_guvi_callback(
-                session_id=session_id,
-                scam_detected=True,
-                total_messages=total_messages_exchanged,
-                intelligence=callback_intelligence,
-                agent_notes=final_notes,
-                engagement_duration=engagement_duration,
-                scam_type=detection_result.scam_type,
-                confidence=detection_result.confidence,
-            )
-            log.info(
-                "GUVI callback sent",
-                success=callback_success,
-                session_id=session_id,
-                total_messages=total_messages_exchanged,
-            )
-        except Exception as e:
-            log.warning("GUVI callback failed", error=str(e), session_id=session_id)
+        # Fire callback truly async (fire-and-forget) — don't block the response
+        asyncio.create_task(_fire_callback(
+            session_id=session_id,
+            total_messages=total_messages_exchanged,
+            intelligence=callback_intelligence,
+            agent_notes=final_notes,
+            engagement_duration=engagement_duration,
+            scam_type=detection_result.scam_type,
+            confidence=detection_result.confidence,
+        ))
         
         # Return simplified response to hackathon platform
         return HoneyPotResponse(
@@ -393,7 +393,7 @@ async def analyze_message_detailed(request: AnalyzeRequest) -> AnalyzeResponse:
 
     try:
         # Step 1: Detect scam (with persistent suspicion — Fix 4B)
-        detector = ScamDetector()
+        detector = get_detector()
         previous_detection = get_previous_detection(session_id)
         detection_result = await detector.analyze(
             message=request.message.text,
@@ -425,7 +425,7 @@ async def analyze_message_detailed(request: AnalyzeRequest) -> AnalyzeResponse:
         extractor = IntelligenceExtractor()
 
         # Step 2: Engage with AI agent
-        agent = HoneypotAgent()
+        agent = get_agent()
         engagement_result = await agent.engage(
             message=request.message,
             history=request.conversationHistory,

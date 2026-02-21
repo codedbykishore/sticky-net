@@ -39,8 +39,9 @@ class Settings(BaseSettings):
     # API Timeout and Retry
     # Budget: 30s hard limit from evaluator
     # Strategy: one attempt per model, then fallback to next model
-    # Worst case: pro_model(20s timeout) + flash_fallback(~3s) = ~23s ✓
-    api_timeout_seconds: int = 20  # Per-model timeout; must allow fallback within 30s
+    # With thinking_budget=0, Gemini 3 responds in ~3-5s (was ~15-20s with HIGH thinking)
+    # Worst case: primary(12s timeout) + fallback(~5s) = ~17s ✔
+    api_timeout_seconds: int = 12  # Per-model timeout; reduced from 20s with thinking disabled
     gemini_max_retries: int = 0  # No retry per model – fall to next model immediately
     gemini_retry_delay_seconds: float = 0.5  # Kept for compatibility (unused when retries=0)
 

@@ -227,3 +227,15 @@ class ScamDetector:
             reasoning=reasoning,
             threat_indicators=ai_result.threat_indicators,
         )
+
+
+# Singleton instance for reuse (avoids per-request genai.Client cold start)
+_detector_instance: ScamDetector | None = None
+
+
+def get_detector() -> ScamDetector:
+    """Get or create the scam detector singleton."""
+    global _detector_instance
+    if _detector_instance is None:
+        _detector_instance = ScamDetector()
+    return _detector_instance
