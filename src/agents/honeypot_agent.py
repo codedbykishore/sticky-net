@@ -539,9 +539,9 @@ Generate your response as Pushpa Verma:"""
                         timeout=timeout_seconds,
                     )
                     
-                    # Gemini 3 thinking set to MINIMAL to reduce latency.
-                    # With thinking_budget=0, the model skips deep reasoning
-                    # and we only need ~2K tokens for the JSON reply.
+                    # thinking_budget=0 = disable thinking to minimize latency.
+                    # The prompt + missing_intel injection provides clear targeting
+                    # without model needing to reason. Keeps responses under 20s.
                     max_tokens = 2048
                     
                     # Build config with model-specific settings

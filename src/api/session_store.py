@@ -161,13 +161,48 @@ _DETECTIONS: dict[str, Any] = {}
 
 
 def store_detection_result(session_id: str, result: Any) -> None:
-    """Store last detection result for persistent suspicion."""
+    """Store last detection result for persistent suspicion (in-memory + Firestore)."""
     _DETECTIONS[session_id] = result
+
+    # Also persist to Firestore so cross-instance reads work
+    client = _get_firestore_client()
+    if client and result:
+        try:
+            client.collection(FIRESTORE_COLLECTION).document(session_id).set({
+                "detection_is_scam": bool(getattr(result, "is_scam", False)),
+                "detection_scam_type": getattr(result, "scam_type", None) or "",
+                "detection_confidence": float(getattr(result, "confidence", 0.0)),
+                "updated_at": time.time(),
+            }, merge=True)
+        except Exception as exc:
+            logger.debug("Firestore detection write failed for %s: %s", session_id, exc)
 
 
 def get_previous_detection(session_id: str) -> Any | None:
-    """Get previous detection result for this session."""
-    return _DETECTIONS.get(session_id)
+    """Get previous detection result (in-memory first, then Firestore)."""
+    if session_id in _DETECTIONS:
+        return _DETECTIONS[session_id]
+
+    # Try Firestore recovery
+    client = _get_firestore_client()
+    if client:
+        try:
+            doc = client.collection(FIRESTORE_COLLECTION).document(session_id).get()
+            if doc.exists:
+                data = doc.to_dict()
+                if data.get("detection_is_scam"):
+                    # Reconstruct a minimal detection result object
+                    class _DetResult:
+                        is_scam = bool(data.get("detection_is_scam", False))
+                        scam_type = data.get("detection_scam_type") or "banking_fraud"
+                        confidence = float(data.get("detection_confidence", 0.85))
+                    restored = _DetResult()
+                    _DETECTIONS[session_id] = restored
+                    return restored
+        except Exception as exc:
+            logger.debug("Firestore detection read failed for %s: %s", session_id, exc)
+
+    return None
 
 
 # ---------------------------------------------------------------------------

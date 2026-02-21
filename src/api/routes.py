@@ -23,6 +23,7 @@ from src.api.session_store import (
     accumulate_intel as _accumulate_intel,
     init_session_start_time,
     get_session_start_time,
+    get_or_init_session_intel,
     store_detection_result,
     get_previous_detection,
 )
@@ -88,6 +89,26 @@ async def analyze_message(request: AnalyzeRequest) -> HoneyPotResponse:
     # The tester / evaluator sends [CONVERSATION_END] to collect final output.
     if request.message.text.strip() == "[CONVERSATION_END]":
         log.info("Received CONVERSATION_END – returning accumulated final output")
+
+        # ── Re-run regex extraction on full history to recover any lost intel ──
+        # This is critical when Cloud Run spawns a fresh instance for this request
+        # (in-memory session may be empty) — regex will still find intel from msgs.
+        history_messages = [
+            {"sender": m.sender.value if hasattr(m.sender, "value") else str(m.sender), "text": m.text}
+            for m in request.conversationHistory
+        ]
+        if history_messages:
+            history_extractor = IntelligenceExtractor()
+            history_regex = history_extractor.extract_from_conversation(history_messages)
+            if history_regex.has_intelligence:
+                _accumulate_intel(session_id, ExtractedIntelligence(
+                    bankAccounts=history_regex.bank_accounts,
+                    upiIds=history_regex.upi_ids,
+                    phoneNumbers=history_regex.phone_numbers,
+                    phishingLinks=history_regex.phishing_links,
+                    emailAddresses=history_regex.emails,
+                ))
+
         accumulated = _accumulate_intel(session_id, ExtractedIntelligence())
         session_start = get_session_start_time(session_id) or request_start_time
         total_msgs = len(request.conversationHistory) + 1
@@ -95,7 +116,23 @@ async def analyze_message(request: AnalyzeRequest) -> HoneyPotResponse:
         prev_det = get_previous_detection(session_id)
         scam_type_val = prev_det.scam_type if prev_det else None
         confidence_val = float(prev_det.confidence) if prev_det else 0.0
-        scam_detected = bool(prev_det and prev_det.is_scam)
+
+        # Fallback: if detection state was lost (cross-instance) but conversation
+        # history shows engagement, we know scam was detected (agent only engages
+        # after detection). Use a safe fallback rather than returning False.
+        user_turns_in_history = sum(
+            1 for m in request.conversationHistory
+            if (m.sender.value if hasattr(m.sender, "value") else str(m.sender)) == "user"
+        )
+        if prev_det and prev_det.is_scam:
+            scam_detected = True
+        elif user_turns_in_history >= 1:
+            # Honeypot engaged the scammer → scam was definitely detected
+            scam_detected = True
+            scam_type_val = scam_type_val or "banking_fraud"
+            confidence_val = confidence_val or 0.85
+        else:
+            scam_detected = False
         notes = (
             f"Honeypot engaged {total_msgs} messages. "
             f"Scam type: {scam_type_val}. "
@@ -173,6 +210,24 @@ async def analyze_message(request: AnalyzeRequest) -> HoneyPotResponse:
         agent = get_agent()
         elapsed_so_far = time.time() - request_start_time
         agent_budget = max(1.0, TOTAL_REQUEST_BUDGET - elapsed_so_far)
+
+        # Pass accumulated intel so the agent knows what's found vs. still missing
+        _session_intel = get_or_init_session_intel(session_id)
+        _extracted_dict = {k: list(v) for k, v in _session_intel.items()}
+        _missing: list[str] = []
+        if not _session_intel.get("bankAccounts"):
+            _missing.append("bank account number")
+        if not _session_intel.get("upiIds"):
+            _missing.append("UPI ID")
+        if not _session_intel.get("phoneNumbers"):
+            _missing.append("phone number")
+        if not _session_intel.get("phishingLinks"):
+            _missing.append("suspicious link / website URL")
+        if not _session_intel.get("emailAddresses"):
+            _missing.append("email address")
+        if not _session_intel.get("caseIds"):
+            _missing.append("case / reference ID")
+
         try:
             engagement_result = await asyncio.wait_for(
                 agent.engage(
@@ -181,6 +236,8 @@ async def analyze_message(request: AnalyzeRequest) -> HoneyPotResponse:
                     metadata=request.metadata,
                     detection=detection_result,
                     turn_number=current_turn,
+                    missing_intel=_missing,
+                    extracted_intel=_extracted_dict,
                 ),
                 timeout=agent_budget,
             )
