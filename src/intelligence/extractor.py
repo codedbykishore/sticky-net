@@ -40,6 +40,9 @@ class ExtractionResult:
     ifsc_codes: list[str] = field(default_factory=list)
     whatsapp_numbers: list[str] = field(default_factory=list)
     suspicious_keywords: list[str] = field(default_factory=list)
+    case_ids: list[str] = field(default_factory=list)
+    policy_numbers: list[str] = field(default_factory=list)
+    order_numbers: list[str] = field(default_factory=list)
     source: ExtractionSource = ExtractionSource.AI
 
     @property
@@ -55,7 +58,10 @@ class ExtractionResult:
             self.bank_names or
             self.ifsc_codes or
             self.whatsapp_numbers or
-            self.suspicious_keywords
+            self.suspicious_keywords or
+            self.case_ids or
+            self.policy_numbers or
+            self.order_numbers
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -71,6 +77,9 @@ class ExtractionResult:
             "ifscCodes": self.ifsc_codes,
             "whatsappNumbers": self.whatsapp_numbers,
             "suspiciousKeywords": self.suspicious_keywords,
+            "caseIds": self.case_ids,
+            "policyNumbers": self.policy_numbers,
+            "orderNumbers": self.order_numbers,
         }
 
 
@@ -241,12 +250,46 @@ class IntelligenceExtractor:
         # Phishing links: http/https URLs
         urls = re.findall(r'https?://[^\s<>"\')]+', text)
         
+        # ── Reference-style IDs (order numbers, case IDs, policy numbers) ──
+        # Structural: 3+ uppercase-alphanumeric segments separated by dashes
+        ref_ids = re.findall(r'\b([A-Z][A-Z0-9]*(?:-[A-Z0-9]+){2,})\b', text)
+        # Contextual: "order number: XXX", "case id: XXX", etc.
+        order_ctx = re.findall(
+            r'(?:order\s*(?:number|id|#|no\.?)?[:\s=]+)([\w-]{5,})', text, re.IGNORECASE
+        )
+        case_ctx = re.findall(
+            r'(?:(?:case|ref(?:erence)?|ticket|incident)\s*(?:id|number|#|no\.?)?[:\s=]+)([\w-]{5,})',
+            text, re.IGNORECASE,
+        )
+        policy_ctx = re.findall(
+            r'(?:policy\s*(?:number|id|#|no\.?)?[:\s=]+)([\w-]{5,})', text, re.IGNORECASE
+        )
+        
+        order_numbers: list[str] = list(set(order_ctx))
+        case_ids_list: list[str] = list(set(case_ctx))
+        policy_numbers: list[str] = list(set(policy_ctx))
+        
+        # Classify structural ref_ids by keyword content
+        for rid in ref_ids:
+            upper = rid.upper()
+            if 'ORD' in upper and rid not in order_numbers:
+                order_numbers.append(rid)
+            elif any(kw in upper for kw in ('CASE', 'TICK', 'TKT', 'REF', 'INC', 'SR', 'KYC')):
+                if rid not in case_ids_list:
+                    case_ids_list.append(rid)
+            elif any(kw in upper for kw in ('POL', 'INS')):
+                if rid not in policy_numbers:
+                    policy_numbers.append(rid)
+        
         return ExtractionResult(
             bank_accounts=accounts,
             upi_ids=upi_ids,
             phone_numbers=phones,
             phishing_links=urls,
             emails=emails,
+            case_ids=case_ids_list,
+            policy_numbers=policy_numbers,
+            order_numbers=order_numbers,
             source=ExtractionSource.REGEX,
         )
 
@@ -271,6 +314,9 @@ class IntelligenceExtractor:
                 combined.phone_numbers.extend(result.phone_numbers)
                 combined.phishing_links.extend(result.phishing_links)
                 combined.emails.extend(result.emails)
+                combined.case_ids.extend(result.case_ids)
+                combined.policy_numbers.extend(result.policy_numbers)
+                combined.order_numbers.extend(result.order_numbers)
         
         # Deduplicate
         combined.bank_accounts = list(set(combined.bank_accounts))
@@ -278,6 +324,9 @@ class IntelligenceExtractor:
         combined.phone_numbers = list(set(combined.phone_numbers))
         combined.phishing_links = list(set(combined.phishing_links))
         combined.emails = list(set(combined.emails))
+        combined.case_ids = list(set(combined.case_ids))
+        combined.policy_numbers = list(set(combined.policy_numbers))
+        combined.order_numbers = list(set(combined.order_numbers))
         
         return combined
 
@@ -320,12 +369,15 @@ class IntelligenceExtractor:
             upi_ids=list(set(ai_result.upi_ids + regex_result.upi_ids)),
             phone_numbers=list(set(ai_result.phone_numbers + regex_result.phone_numbers)),
             phishing_links=list(set(ai_result.phishing_links + regex_result.phishing_links)),
-            emails=list(set(ai_result.emails + regex_result.emails)),  # ExtractionResult uses 'emails'
+            emails=list(set(ai_result.emails + regex_result.emails)),
             beneficiary_names=ai_result.beneficiary_names,
             bank_names=ai_result.bank_names,
             ifsc_codes=ai_result.ifsc_codes,
             whatsapp_numbers=ai_result.whatsapp_numbers,
             suspicious_keywords=ai_result.suspicious_keywords,
+            case_ids=list(set(ai_result.case_ids + regex_result.case_ids)),
+            policy_numbers=list(set(ai_result.policy_numbers + regex_result.policy_numbers)),
+            order_numbers=list(set(ai_result.order_numbers + regex_result.order_numbers)),
             source=ExtractionSource.AI,
         )
         return merged

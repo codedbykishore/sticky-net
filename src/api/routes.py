@@ -51,6 +51,7 @@ async def _fire_callback(**kwargs) -> None:
 @router.post(
     "/analyze",
     response_model=HoneyPotResponse,
+    response_model_exclude_none=True,
     responses={
         200: {"model": HoneyPotResponse, "description": "Successful analysis"},
         400: {"model": ErrorResponse, "description": "Invalid request"},
@@ -107,6 +108,9 @@ async def analyze_message(request: AnalyzeRequest) -> HoneyPotResponse:
                     phoneNumbers=history_regex.phone_numbers,
                     phishingLinks=history_regex.phishing_links,
                     emailAddresses=history_regex.emails,
+                    caseIds=history_regex.case_ids,
+                    policyNumbers=history_regex.policy_numbers,
+                    orderNumbers=history_regex.order_numbers,
                 ))
 
         accumulated = _accumulate_intel(session_id, ExtractedIntelligence())
@@ -146,6 +150,17 @@ async def analyze_message(request: AnalyzeRequest) -> HoneyPotResponse:
             f"policyNumbers={len(accumulated.get('policyNumbers',[]))}, "
             f"orderNumbers={len(accumulated.get('orderNumbers',[]))}."
         )
+        # Slim down extractedIntelligence to only evaluator-scored fields
+        scored_intel = {
+            "phoneNumbers": accumulated.get("phoneNumbers", []),
+            "bankAccounts": accumulated.get("bankAccounts", []),
+            "upiIds": accumulated.get("upiIds", []),
+            "phishingLinks": accumulated.get("phishingLinks", []),
+            "emailAddresses": accumulated.get("emailAddresses", []),
+            "caseIds": accumulated.get("caseIds", []),
+            "policyNumbers": accumulated.get("policyNumbers", []),
+            "orderNumbers": accumulated.get("orderNumbers", []),
+        }
         return HoneyPotResponse(
             status="success",
             reply="Thank you for your time. Goodbye.",
@@ -155,7 +170,7 @@ async def analyze_message(request: AnalyzeRequest) -> HoneyPotResponse:
             confidenceLevel=confidence_val,
             totalMessagesExchanged=total_msgs,
             engagementDurationSeconds=engagement_secs,
-            extractedIntelligence=accumulated,
+            extractedIntelligence=scored_intel,
             agentNotes=notes,
         )
 
@@ -227,6 +242,10 @@ async def analyze_message(request: AnalyzeRequest) -> HoneyPotResponse:
             _missing.append("email address")
         if not _session_intel.get("caseIds"):
             _missing.append("case / reference ID")
+        if not _session_intel.get("orderNumbers"):
+            _missing.append("order number / order ID")
+        if not _session_intel.get("policyNumbers"):
+            _missing.append("policy number")
 
         try:
             engagement_result = await asyncio.wait_for(
@@ -311,6 +330,8 @@ async def analyze_message(request: AnalyzeRequest) -> HoneyPotResponse:
                 upi=len(regex_result.upi_ids),
                 urls=len(regex_result.phishing_links),
                 emails=len(regex_result.emails),
+                case_ids=len(regex_result.case_ids),
+                order_numbers=len(regex_result.order_numbers),
             )
             # Merge regex finds into validated_intel
             merged_accounts = list(set(validated_intel.bankAccounts + regex_result.bank_accounts))
@@ -318,6 +339,9 @@ async def analyze_message(request: AnalyzeRequest) -> HoneyPotResponse:
             merged_phones = list(set(validated_intel.phoneNumbers + regex_result.phone_numbers))
             merged_links = list(set(validated_intel.phishingLinks + regex_result.phishing_links))
             merged_emails = list(set((validated_intel.emailAddresses or []) + regex_result.emails))
+            merged_case_ids = list(set((validated_intel.caseIds or []) + regex_result.case_ids))
+            merged_policy_numbers = list(set((validated_intel.policyNumbers or []) + regex_result.policy_numbers))
+            merged_order_numbers = list(set((validated_intel.orderNumbers or []) + regex_result.order_numbers))
             
             validated_intel = ExtractedIntelligence(
                 bankAccounts=merged_accounts,
@@ -330,9 +354,9 @@ async def analyze_message(request: AnalyzeRequest) -> HoneyPotResponse:
                 ifscCodes=validated_intel.ifscCodes,
                 whatsappNumbers=validated_intel.whatsappNumbers,
                 suspiciousKeywords=validated_intel.suspiciousKeywords,
-                caseIds=validated_intel.caseIds,
-                policyNumbers=validated_intel.policyNumbers,
-                orderNumbers=validated_intel.orderNumbers,
+                caseIds=merged_case_ids,
+                policyNumbers=merged_policy_numbers,
+                orderNumbers=merged_order_numbers,
             )
 
         # Step 4: Log intelligence status (never exit voluntarily — Fix 2A)
